@@ -1,0 +1,236 @@
+# Avisos do Verilator (lint) em português. Chave = código do aviso (ruleId do SARIF).
+# o_que: o que o aviso quer dizer. fazer: o próximo passo mais comum.
+
+[WIDTHEXPAND]
+o_que = "Larguras diferentes: um operando tem menos bits do que a operação espera e vai ser completado com zeros."
+fazer = "Confira se é isso mesmo; para deixar explícito, estenda o sinal: {4'b0, a} ou use uma constante com a largura certa."
+
+[WIDTHTRUNC]
+o_que = "Larguras diferentes: o valor tem mais bits do que cabe no destino e os bits de cima vão ser descartados."
+fazer = "Aumente a largura do destino ou selecione os bits de propósito: y = x[3:0]."
+
+[WIDTH]
+o_que = "Larguras diferentes entre os dois lados de uma atribuição ou operação."
+fazer = "Iguale as larguras; em constantes, escreva a largura: 8'd1 em vez de 1."
+
+[UNUSEDSIGNAL]
+o_que = "Sinal declarado que ninguém usa (ou que nem recebe valor)."
+fazer = "Apague a declaração, ou ligue o sinal onde ele deveria ser usado."
+
+[UNUSEDPARAM]
+o_que = "Parâmetro declarado que ninguém usa."
+fazer = "Apague o parâmetro ou use-o onde a constante aparece escrita à mão."
+
+[UNDRIVEN]
+o_que = "Sinal que é lido mas nunca recebe valor: no hardware ele ficaria flutuando."
+fazer = "Atribua um valor (assign ou dentro de um always), ou confira o nome — pode ser erro de digitação."
+
+[MULTIDRIVEN]
+o_que = "O mesmo sinal recebe valor em mais de um bloco always: no hardware seriam dois circuitos brigando pelo mesmo fio."
+fazer = "Concentre todas as atribuições desse sinal num único bloco always."
+
+[LATCH]
+o_que = "Um bloco combinacional deixa de atribuir o sinal em algum caminho, então o circuito precisa lembrar o valor anterior: vira latch."
+fazer = "Dê um valor padrão no começo do bloco, ou cubra todos os casos (else e default)."
+
+[NOLATCH]
+o_que = "O bloco foi declarado always_latch mas não gera latch."
+fazer = "Troque por always_comb."
+
+[COMBDLY]
+o_que = "Atribuição não bloqueante (<=) num bloco combinacional."
+fazer = "Em always @(*) ou always_comb use =; deixe <= para blocos com relógio."
+
+[BLKSEQ]
+o_que = "Atribuição bloqueante (=) num bloco com relógio."
+fazer = "Em always @(posedge clk) use <=, para todos os flip-flops atualizarem juntos."
+
+[CASEINCOMPLETE]
+o_que = "O case não cobre todos os valores possíveis e não tem default."
+fazer = "Acrescente um default; sem ele a síntese pode criar latch."
+
+[CASEOVERLAP]
+o_que = "Dois itens do case casam com o mesmo valor; só o primeiro vale."
+fazer = "Remova ou corrija o item repetido."
+
+[CASEX]
+o_que = "casex trata X e Z como \"tanto faz\" e esconde erros de simulação."
+fazer = "Prefira case (ou casez, se precisar de curingas)."
+
+[IMPLICIT]
+o_que = "Um fio foi criado implicitamente, só por aparecer numa ligação — muitas vezes é um nome digitado errado."
+fazer = "Declare o fio com wire/logic, ou corrija o nome."
+
+[PINMISSING]
+o_que = "Uma porta do módulo instanciado ficou sem ligação."
+fazer = "Ligue a porta, ou deixe explícito que está vazia: .porta()."
+
+[PINCONNECTEMPTY]
+o_que = "Uma porta foi ligada a nada, explicitamente."
+fazer = "Se for de propósito, tudo bem."
+
+[DECLFILENAME]
+o_que = "O nome do módulo não é igual ao nome do arquivo."
+fazer = "Renomeie o arquivo para <módulo>.v — facilita achar cada módulo."
+
+[SYNCASYNCNET]
+o_que = "O mesmo sinal é usado como reset assíncrono num lugar e síncrono em outro."
+fazer = "Escolha um estilo de reset e use o mesmo em todo o projeto."
+
+[UNOPTFLAT]
+o_que = "Laço combinacional (ou quase): um sinal depende dele mesmo sem passar por um flip-flop."
+fazer = "Quebre o laço com um registrador, ou separe o vetor em sinais independentes."
+
+[ALWCOMBORDER]
+o_que = "No always_comb, um sinal é lido antes de receber valor no mesmo bloco."
+fazer = "Reordene: atribua antes de usar."
+
+[SELRANGE]
+o_que = "Seleção de bits fora da faixa do vetor."
+fazer = "Confira os índices: um vetor [7:0] vai de 0 a 7."
+
+[ASCRANGE]
+o_que = "Vetor declarado em ordem crescente ([0:7]); o costume é decrescente ([7:0])."
+fazer = "Use [msb:lsb], como [7:0]."
+
+[GENUNNAMED]
+o_que = "Bloco generate sem nome: os sinais dentro dele ganham nomes automáticos difíceis de achar."
+fazer = "Dê um nome ao bloco: begin : g_nome."
+
+[MULTITOP]
+o_que = "Há mais de um módulo que ninguém instancia; o Verilator não sabe qual é o topo."
+fazer = "Confira o campo topo no axil.toml, ou instancie o módulo que sobrou."
+
+[STMTDLY]
+o_que = "Atraso (#) num lugar que vira hardware; a síntese ignora atrasos."
+fazer = "Use atrasos só em testbench."
+
+[INITIALDLY]
+o_que = "Atribuição não bloqueante dentro de initial."
+fazer = "Em initial, use =."
+
+[EOFNEWLINE]
+o_que = "O arquivo não termina com quebra de linha."
+fazer = "Acrescente uma linha em branco no fim do arquivo."
+
+# --- Regras de estilo do Verible (servidor de linguagem, ao digitar). Chave = id da regra. ------
+
+[verible.always-comb]
+o_que = "Em SystemVerilog, always_comb é melhor que always @*: o compilador confere que o bloco é mesmo combinacional."
+fazer = "Troque always @(*) por always_comb."
+
+[verible.always-comb-blocking]
+o_que = "Atribuição não bloqueante (<=) em lógica combinacional."
+fazer = "Em always_comb ou always @(*), use =."
+
+[verible.always-ff-non-blocking]
+o_que = "Atribuição bloqueante (=) num bloco com relógio."
+fazer = "Em always_ff ou always @(posedge clk), use <= para todos os flip-flops atualizarem juntos."
+
+[verible.case-missing-default]
+o_que = "case sem default: se nenhum item casar, a síntese pode criar memória acidental (latch)."
+fazer = "Acrescente default: … no fim do case (ou use unique case, se todos os valores estão cobertos)."
+
+[verible.explicit-parameter-storage-type]
+o_que = "Em SystemVerilog, todo parameter e localparam deve dizer o tipo."
+fazer = "Escreva o tipo: parameter int N = 8; ou localparam logic [1:0] VERDE = 2'd0;"
+
+[verible.explicit-function-lifetime]
+o_que = "Função sem automatic/static explícito."
+fazer = "Escreva function automatic … — cada chamada com as próprias variáveis."
+
+[verible.explicit-task-lifetime]
+o_que = "Task sem automatic/static explícito."
+fazer = "Escreva task automatic … — cada chamada com as próprias variáveis."
+
+[verible.forbid-defparam]
+o_que = "defparam muda parâmetros de longe e é considerado obsoleto."
+fazer = "Passe o parâmetro na instância: modulo #(.N(16)) u_nome (…);"
+
+[verible.generate-label]
+o_que = "Bloco generate sem nome."
+fazer = "Dê um nome: begin : g_nome … end — os sinais de dentro ficam fáceis de achar."
+
+[verible.generate-label-prefix]
+o_que = "O nome de um bloco generate deve começar com g_."
+fazer = "Renomeie para g_<nome>."
+
+[verible.line-length]
+o_que = "Linha com mais de 100 caracteres."
+fazer = "Quebre a linha, ou use Formatar."
+
+[verible.module-filename]
+o_que = "O nome do arquivo não bate com o nome do módulo."
+fazer = "Renomeie o arquivo para <módulo>.sv (ou .v)."
+
+[verible.no-tabs]
+o_que = "Tabulação no código: cada editor mostra com uma largura e o alinhamento se perde."
+fazer = "Use espaços — Formatar resolve."
+
+[verible.no-trailing-spaces]
+o_que = "Espaços sobrando no fim da linha."
+fazer = "Apague-os — Formatar resolve."
+
+[verible.posix-eof]
+o_que = "O arquivo não termina com quebra de linha."
+fazer = "Acrescente uma linha vazia no fim."
+
+[verible.packed-dimensions-range-ordering]
+o_que = "Vetor declarado em ordem crescente ([0:7]); o costume é decrescente ([7:0])."
+fazer = "Use [msb:lsb], como [7:0]."
+
+[verible.unpacked-dimensions-range-ordering]
+o_que = "Dimensão de memória em ordem diferente do costume."
+fazer = "Para memórias, use [0:N-1] ou só [N]."
+
+[verible.parameter-name-style]
+o_que = "Nome de parameter fora do padrão (MAIÚSCULAS ou CamelCase)."
+fazer = "Use, por exemplo, LARGURA ou NumBits."
+
+[verible.enum-name-style]
+o_que = "Nome de tipo enum fora do padrão: deve terminar em _t ou _e."
+fazer = "Renomeie, por exemplo, para estado_t."
+
+[verible.struct-union-name-style]
+o_que = "Nome de struct/union fora do padrão: deve terminar em _t."
+fazer = "Renomeie, por exemplo, para pacote_t."
+
+[verible.typedef-enums]
+o_que = "enum declarado sem typedef."
+fazer = "Use typedef enum … nome_t; e declare os sinais com esse tipo."
+
+[verible.typedef-structs-unions]
+o_que = "struct/union declarada sem typedef."
+fazer = "Use typedef struct packed { … } nome_t;"
+
+[verible.undersized-binary-literal]
+o_que = "Constante binária com menos dígitos do que a largura declarada."
+fazer = "Escreva todos os bits: 4'b0001 em vez de 4'b1."
+
+[verible.truncated-numeric-literal]
+o_que = "Constante que não cabe na largura declarada; os bits de cima serão cortados."
+fazer = "Aumente a largura ou confira o valor."
+
+[verible.suggest-parentheses]
+o_que = "Expressão ambígua de ler (operador ternário encadeado)."
+fazer = "Acrescente parênteses para deixar a intenção clara."
+
+[verible.v2001-generate-begin]
+o_que = "begin/end logo dentro de generate é desnecessário desde o Verilog-2001."
+fazer = "Remova o begin/end externo do generate."
+
+[verible.module-begin-block]
+o_que = "begin/end solto no corpo do módulo."
+fazer = "Remova; o corpo do módulo não precisa de begin/end."
+
+[verible.forbid-consecutive-null-statements]
+o_que = "Ponto e vírgula repetido (;;)."
+fazer = "Apague o que sobrou."
+
+[verible.positive-meaning-parameter-name]
+o_que = "Parâmetro com nome negativo (DISABLE_…), difícil de ler em condições."
+fazer = "Prefira o sentido positivo: ENABLE_… ."
+
+[verible.invalid-system-task-function]
+o_que = "Função de sistema ($…) desconhecida ou proibida."
+fazer = "Confira o nome: $display, $finish, $clog2…"

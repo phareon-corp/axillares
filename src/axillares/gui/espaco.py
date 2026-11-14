@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -62,6 +62,7 @@ class AreaProjeto(QWidget):
         fabrica_motor: Callable[[str], Motor],
         fabrica_editor: Callable[[], QWidget] | None,
         fontes: FontesDeExecucoes,
+        fabrica_assistente: Callable[[], QObject] | None = None,
     ) -> None:
         super().__init__()
         self.sessao = Sessao(fabrica_motor)
@@ -70,7 +71,7 @@ class AreaProjeto(QWidget):
         self.pilha = QStackedWidget()
         lay.addWidget(self.pilha)
         self.projeto = TelaProjeto(self.sessao)
-        self.editor = TelaEditor(self.sessao, fabrica_editor)
+        self.editor = TelaEditor(self.sessao, fabrica_editor, fabrica_assistente)
         self.execucoes = TelaExecucoes(self.sessao)
         self.layout_ = TelaLayout(self.sessao, fontes)
         self.comparar = TelaComparar(self.sessao)
@@ -106,6 +107,7 @@ class AreaProjeto(QWidget):
 
     def encerrar(self) -> None:
         self.layout_.encerrar()
+        self.editor.encerrar()
         self.sessao.encerrar()
 
 

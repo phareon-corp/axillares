@@ -30,6 +30,9 @@ class Ponte(QObject):
     cursor_sinal = Signal(int, int, str)
     salvar_sinal = Signal(str, str, int)
     acao_sinal = Signal(str)
+    mudou_sinal = Signal(str, str)
+    pedir_sinal = Signal(int, str, str, str)
+    abrir_em_sinal = Signal(str, int, int)
 
     @Slot()
     def pronto(self) -> None:
@@ -51,6 +54,18 @@ class Ponte(QObject):
     def acao(self, nome: str) -> None:
         self.acao_sinal.emit(nome)
 
+    @Slot(str, str)
+    def mudou(self, caminho: str, texto: str) -> None:
+        self.mudou_sinal.emit(caminho, texto)
+
+    @Slot(int, str, str, str)
+    def pedir(self, ident: int, tipo: str, caminho: str, dados: str) -> None:
+        self.pedir_sinal.emit(ident, tipo, caminho, dados)
+
+    @Slot(str, int, int)
+    def abrirEm(self, caminho: str, linha: int, coluna: int) -> None:
+        self.abrir_em_sinal.emit(caminho, linha, coluna)
+
 
 class _Pagina(QWebEnginePage):
     """Só a própria página local carrega; links externos nunca abrem dentro do editor."""
@@ -65,6 +80,12 @@ class EditorCodigo(QWidget):
     cursor_mudou = Signal(int, int, str)
     salvar_pedido = Signal(Path, str, int)
     acao_pedida = Signal(str)
+    texto_mudou = Signal(Path, str)
+    """O usuário editou (após uma pausa na digitação): o texto inteiro, para o servidor."""
+    pedido_linguagem = Signal(int, str, Path, dict)
+    """(id, tipo, arquivo, dados) — responda com `responder(id, ...)`."""
+    abrir_em = Signal(Path, int, int)
+    """Ir à definição caiu em outro arquivo: abrir a aba nele."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -91,10 +112,16 @@ class EditorCodigo(QWidget):
         self.ponte.cursor_sinal.connect(self.cursor_mudou)
         self.ponte.salvar_sinal.connect(lambda c, x, v: self.salvar_pedido.emit(Path(c), x, v))
         self.ponte.acao_sinal.connect(self.acao_pedida)
+        self.ponte.mudou_sinal.connect(lambda c, x: self.texto_mudou.emit(Path(c), x))
+        self.ponte.pedir_sinal.connect(self._pedido)
+        self.ponte.abrir_em_sinal.connect(lambda c, lin, col: self.abrir_em.emit(Path(c), lin, col))
 
         t.tema().mudou.connect(self._tema_mudou)
         self.visao.loadFinished.connect(lambda _ok: self.aplicar_tema())
         self.visao.load(QUrl.fromLocalFile(str(PAGINA)))
+
+    def _pedido(self, ident: int, tipo: str, caminho: str, dados: str) -> None:
+        self.pedido_linguagem.emit(ident, tipo, Path(caminho), json.loads(dados or "{}"))
 
     def _tema_mudou(self, _paleta: object) -> None:
         self.aplicar_tema()
@@ -149,7 +176,8 @@ class EditorCodigo(QWidget):
     def salvar_todos(self) -> None:
         self._js("pedirSalvarTodos")
 
-    def problemas(self, caminho: Path, locais: list[Local]) -> None:
+    def problemas(self, caminho: Path, locais: list[Local], dono: str = "fluxo") -> None:
+        """dono: "fluxo", "verible" ou "verilator" — cada um tem os próprios marcadores."""
         self._js(
             "problemas",
             str(caminho),
@@ -158,7 +186,20 @@ class EditorCodigo(QWidget):
                  "gravidade": x.gravidade, "origem": x.origem}
                 for x in locais
             ],
+            dono,
         )  # fmt: skip
+
+    def responder(
+        self, ident: int, resultado: object, textos: dict[Path, str] | None = None
+    ) -> None:
+        """Resposta a um `pedido_linguagem`. `textos`: arquivos citados que o editor ainda não
+        tem carregados (para espiar a definição, por exemplo)."""
+        carregar = {str(c): x for c, x in (textos or {}).items()}
+        self._js("resposta", ident, {"resultado": resultado, "textos": carregar})
+
+    def acao(self, nome: str) -> None:
+        """Roda uma ação do Monaco pelo id (editor.action.formatDocument, …)."""
+        self._js("acao", nome)
 
     def ir_para(self, caminho: Path, linha: int, coluna: int = 1) -> None:
         self._js("irPara", str(caminho), linha, coluna)

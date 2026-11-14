@@ -27,6 +27,8 @@ app.command("comparar")(projeto.comparar_cmd)
 app.command("abrir")(projeto.abrir)
 app.command("layout")(projeto.layout)
 app.command("placas")(projeto.placas_cmd)
+app.command("lint")(projeto.lint)
+app.command("arquivo")(projeto.arquivo)
 
 
 @app.callback()

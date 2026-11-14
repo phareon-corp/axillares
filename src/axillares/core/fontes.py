@@ -6,9 +6,11 @@ Gravar é atômico (arquivo temporário + rename) e só vale dentro do projeto, 
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from string import Template
 
 from axillares.core.projeto import ARQUIVO, Projeto
 
@@ -91,3 +93,54 @@ def salvar(projeto: Projeto, caminho: Path, texto: str) -> None:
     except BaseException:
         Path(temporario).unlink(missing_ok=True)
         raise
+
+
+# --- arquivo novo ------------------------------------------------------------------------------
+
+PASTA_ESQUELETOS = Path(__file__).resolve().parent.parent / "templates" / "arquivos"
+TIPOS_NOVO = {"modulo": "módulo (o circuito)", "testbench": "testbench (simulação)"}
+_IDENTIFICADOR = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+@dataclass(frozen=True)
+class ArquivoNovo:
+    caminho: Path
+    aviso: str | None = None
+    """Quando o arquivo não casa com fontes.rtl/testbenches do axil.toml (o fluxo não o veria)."""
+
+
+def esqueleto(nome_modulo: str, extensao: str, tipo: str = "modulo") -> str:
+    modelo = PASTA_ESQUELETOS / f"{tipo}{extensao}"
+    return Template(modelo.read_text(encoding="utf-8")).substitute(nome=nome_modulo)
+
+
+def criar(projeto: Projeto, relativo: str, tipo: str = "modulo") -> ArquivoNovo:
+    """Cria um arquivo Verilog/SystemVerilog com esqueleto. Nunca sobrescreve."""
+    alvo = Path(relativo)
+    if alvo.is_absolute() or ".." in alvo.parts:
+        raise ErroArquivo("Use um caminho relativo ao projeto, como rtl/somador.sv.")
+    extensao = alvo.suffix.lower()
+    if extensao not in {".v", ".sv"}:
+        raise ErroArquivo("O arquivo precisa terminar em .v (Verilog) ou .sv (SystemVerilog).")
+    if not _IDENTIFICADOR.match(alvo.stem):
+        raise ErroArquivo(
+            f"“{alvo.stem}” não serve como nome de módulo: use letras, números e _, começando "
+            "por letra."
+        )
+    if tipo not in TIPOS_NOVO:
+        raise ErroArquivo(f"Tipo “{tipo}” desconhecido. Use: {', '.join(TIPOS_NOVO)}.")
+    real = _dentro_do_projeto(projeto, projeto.raiz / alvo)
+    if real.exists():
+        raise ErroArquivo(f"{projeto.relativo(real)} já existe.")
+    salvar(projeto, real, esqueleto(alvo.stem, extensao, tipo))
+    lista = projeto.arquivos_testbench() if tipo == "testbench" else projeto.arquivos_rtl()
+    aviso = None
+    if real not in lista:
+        campo = "fontes.testbenches" if tipo == "testbench" else "fontes.rtl"
+        padroes = projeto.fontes.testbenches if tipo == "testbench" else projeto.fontes.rtl
+        aviso = (
+            f"{projeto.relativo(real)} foi criado, mas não casa com {campo} "
+            f"({', '.join(padroes) or 'vazio'}) no axil.toml: o fluxo não vai lê-lo. Mova-o "
+            "para a pasta certa ou acrescente o padrão."
+        )
+    return ArquivoNovo(real, aviso)

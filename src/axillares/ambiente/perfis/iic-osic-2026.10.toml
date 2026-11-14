@@ -36,6 +36,10 @@ ihp130 = "/foss/pdks/ihp-sg13g2/libs.tech/klayout/tech/sg13g2.lyp"
 [visualizador]
 klayout = "/foss/tools/klayout/klayout"
 
+[editor]
+verilator = "/foss/tools/bin/verilator"
+verible_ls = "/foss/tools/bin/verible-verilog-ls"
+
 # --- Dentro do contêiner -------------------------------------------------------------------
 
 [[ferramentas]]
@@ -61,6 +65,15 @@ origem = "conteiner"
 versao = "5.052"
 comando = ["verilator", "--version"]
 expressao = 'Verilator (\d+\.\d+)'
+
+[[ferramentas]]
+nome = "verible"
+descricao = "servidor de linguagem e formatador do editor"
+origem = "conteiner"
+versao = "v0.0-4296"
+essencial = false
+comando = ["verible-verilog-ls", "--version"]
+expressao = 'Version\s+(v[\d.]+-\d+)'
 
 [[ferramentas]]
 nome = "nextpnr"

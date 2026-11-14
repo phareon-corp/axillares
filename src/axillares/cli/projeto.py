@@ -413,3 +413,49 @@ def placas_cmd() -> None:
         recursos = ", ".join(p.recursos)
         console.print(f"  [dim]recursos:[/] {recursos}")
         console.print(f"  [dim]pinagem conferida em:[/] {p.fonte}\n")
+
+
+def lint(pasta: Path | None = OpcaoProjeto) -> None:
+    """Confere o RTL com o Verilator (lint) e explica cada aviso em português."""
+    from axillares.motor.lint_verilator import LintVerilator
+
+    projeto = _projeto(pasta)
+    with console.status("Verilator conferindo o RTL…"):
+        try:
+            r = LintVerilator().verificar(projeto)
+        except ErroMotor as erro:
+            raise _erro(str(erro)) from erro
+    for geral in r.gerais:
+        console.print(f"[bold red]✕[/] {geral}")
+    for x in r.locais:
+        marca = "[bold red]✕[/]" if x.gravidade == "erro" else "[bold yellow]![/]"
+        codigo = x.origem.partition(" · ")[2]
+        console.print(
+            f"{marca} [bold]{x.arquivo}:{x.linha}:{x.coluna}[/]"
+            + (f" [dim]{codigo}[/]" if codigo else "")
+        )
+        console.print(f"  {x.mensagem}", highlight=False)
+    if not r.locais and not r.gerais:
+        console.print("[bold green]✓[/] Nenhum problema: o Verilator não tem nada a dizer.")
+        return
+    console.print(f"\n[dim]{r.erros} erro(s) · {r.avisos} aviso(s)[/]")
+    if r.erros:
+        raise typer.Exit(1)
+
+
+def arquivo(
+    caminho: str = typer.Argument(..., help="Relativo ao projeto, como rtl/somador.sv."),
+    testbench: bool = typer.Option(False, "--testbench", "-t", help="Esqueleto de testbench."),
+    pasta: Path | None = OpcaoProjeto,
+) -> None:
+    """Cria um arquivo Verilog (.v) ou SystemVerilog (.sv) com um esqueleto comentado."""
+    from axillares.core import fontes
+
+    projeto = _projeto(pasta)
+    try:
+        novo = fontes.criar(projeto, caminho, "testbench" if testbench else "modulo")
+    except fontes.ErroArquivo as erro:
+        raise _erro(str(erro)) from erro
+    console.print(f"[bold green]✓[/] {projeto.relativo(novo.caminho)} criado.")
+    if novo.aviso:
+        console.print(f"[bold yellow]![/] {novo.aviso}")

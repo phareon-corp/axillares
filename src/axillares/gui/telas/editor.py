@@ -27,11 +27,25 @@ from axillares.core.modelos import Etapa, Local, Situacao
 from axillares.core.projeto import Projeto
 from axillares.gui import tarefas
 from axillares.gui import tema as t
-from axillares.gui.componentes import Pilula, Ponto, Tabela, botao, quadro, rotulo, tom_da_situacao
+from axillares.gui.assistente import Assistente, locais_por_arquivo
+from axillares.gui.componentes import (
+    Pilula,
+    Ponto,
+    Tabela,
+    botao,
+    quadro,
+    repolir,
+    rotulo,
+    tom_da_situacao,
+)
 from axillares.gui.sessao import Sessao
+from axillares.gui.telas.estrutura import PainelEstrutura
 from axillares.gui.tema import Espaco, Papel
+from axillares.motor import linguagem as lg
 
 PAPEL_CAMINHO = Qt.ItemDataRole.UserRole
+FONTES_PROBLEMAS = ("fluxo", "verible", "verilator")
+NOMES_FONTE = {"fluxo": "execução", "verible": "Verible", "verilator": "Verilator"}
 NOMES_LINGUAGEM = {
     "systemverilog": "SystemVerilog",
     "tcl": "Tcl / SDC",
@@ -71,6 +85,8 @@ class ItemArquivo(QWidget):
     def __init__(self, nome: str, grupo: str) -> None:
         super().__init__()
         sigla, papel = PAPEIS.get(grupo, ("•", ""))
+        if sigla == "V" and nome.lower().endswith((".sv", ".svh")):
+            sigla = "SV"
         lay = QHBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         self.setFixedHeight(46)
@@ -147,17 +163,28 @@ class Aba(QFrame):
 class TelaEditor(QWidget):
     sujos_mudaram = Signal(bool)
 
-    def __init__(self, sessao: Sessao, fabrica_editor: Callable[[], QWidget] | None = None) -> None:
+    def __init__(
+        self,
+        sessao: Sessao,
+        fabrica_editor: Callable[[], QWidget] | None = None,
+        fabrica_assistente: Callable[[], Assistente] | None = None,
+    ) -> None:
         super().__init__()
         self.sessao = sessao
         self._fabrica_editor = fabrica_editor
+        self.assistente = (fabrica_assistente or Assistente)()
+        self.assistente.setParent(self)
+        self._assistente_ligado = False
         self.editor = None  # criado na primeira vez que a tela aparece
         self.abas: dict[Path, Aba] = {}
         self.sujos: set[Path] = set()
         self.atual: Path | None = None
         self._textos: dict[Path, str] = {}
         self._pendentes_ao_abrir: list[tuple[Path, int, int]] = []
-        self._problemas: dict[Path, list[Local]] = {}
+        # problemas por fonte: a execução (fluxo), o Verible (ao digitar) e o Verilator (ao salvar)
+        self._fontes: dict[str, dict[Path, list[Local]]] = {f: {} for f in FONTES_PROBLEMAS}
+        self._gerais: list[str] = []
+        self._ocultos: set[Path] = set()  # carregados no Monaco sem aba (para espiar definições)
         self._salvando: set[Path] = set()
         self._seguir_depois_de_salvar: Callable[[], None] | None = None
         self._tarefas: list[tarefas.Tarefa] = []
@@ -181,7 +208,15 @@ class TelaEditor(QWidget):
         cabeca = QVBoxLayout()
         cabeca.setContentsMargins(Espaco.M + 2, 0, Espaco.M, 0)
         cabeca.setSpacing(2)
-        cabeca.addWidget(rotulo("Arquivos", Papel.ROTULO, "3"))
+        linha_cabeca = QHBoxLayout()
+        linha_cabeca.addWidget(rotulo("Arquivos", Papel.ROTULO, "3"))
+        linha_cabeca.addStretch(1)
+        self.botao_novo = botao("+ Arquivo", "link")
+        self.botao_novo.setFont(t.fonte(Papel.ETIQUETA))
+        self.botao_novo.setToolTip("Criar um módulo ou testbench (.v ou .sv) com esqueleto")
+        self.botao_novo.clicked.connect(self.novo_arquivo)
+        linha_cabeca.addWidget(self.botao_novo)
+        cabeca.addLayout(linha_cabeca)
         self.nome_projeto = rotulo("", Papel.TITULO)
         cabeca.addWidget(self.nome_projeto)
         lat.addLayout(cabeca)
@@ -192,8 +227,16 @@ class TelaEditor(QWidget):
         self.arvore.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.arvore.itemClicked.connect(self._clicou_item)
         lat.addWidget(self.arvore, 1)
-        lateral.setMinimumWidth(240)
-        divisor.addWidget(lateral)
+        self.estrutura = PainelEstrutura()
+        self.estrutura.ir.connect(lambda lin, col: self.atual and self.abrir(self.atual, lin, col))
+        coluna_lateral = QSplitter(Qt.Orientation.Vertical)
+        coluna_lateral.setHandleWidth(1)
+        coluna_lateral.setChildrenCollapsible(False)
+        coluna_lateral.addWidget(lateral)
+        coluna_lateral.addWidget(self.estrutura)
+        coluna_lateral.setSizes([520, 300])
+        coluna_lateral.setMinimumWidth(240)
+        divisor.addWidget(coluna_lateral)
 
         # --- área do editor ---
         area = QWidget()
@@ -222,6 +265,14 @@ class TelaEditor(QWidget):
         self.botao_salvar = botao("Salvar  Ctrl+S", "compacto")
         self.botao_salvar.setToolTip("Ctrl+S")
         self.botao_salvar.clicked.connect(lambda: self.editor and self.editor.salvar())
+        self.botao_formatar = botao("Formatar", "compacto")
+        self.botao_formatar.setToolTip(
+            "Shift+Alt+F — reorganiza recuos e alinhamentos pelo Verible, sem mudar o circuito"
+        )
+        self.botao_formatar.clicked.connect(
+            lambda: self.editor and self.editor.acao("editor.action.formatDocument")
+        )
+        self.botao_formatar.setEnabled(False)
         self.botao_sintese = botao("Síntese  ▸", "compacto")
         self.botao_sintese.setMinimumWidth(96)
         self.botao_sintese.setToolTip("Ctrl+Enter — salva tudo e executa a síntese")
@@ -230,7 +281,7 @@ class TelaEditor(QWidget):
         self.botao_gds.setMinimumWidth(80)
         self.botao_gds.setToolTip("Ctrl+Shift+Enter — salva tudo e executa o fluxo até o GDS")
         self.botao_gds.clicked.connect(lambda: self.sessao.executar(Etapa.GDS))
-        for w in (self.botao_salvar, self.botao_sintese, self.botao_gds):
+        for w in (self.botao_formatar, self.botao_salvar, self.botao_sintese, self.botao_gds):
             b.addSpacing(6)
             b.addWidget(w)
         col.addWidget(barra)
@@ -273,9 +324,10 @@ class TelaEditor(QWidget):
         topo.addWidget(ocultar)
         pp.addLayout(topo)
         self.tabela_problemas = Tabela(
-            [("", 1, "e"), ("arquivo", 4, "e"), ("linha", 1, "d"), ("mensagem", 12, "e")],
-            [Papel.CORPO, Papel.MONO, Papel.MONO, Papel.MONO],
-        )
+            [("", 1, "e"), ("arquivo", 4, "e"), ("linha", 1, "d"), ("mensagem", 14, "e"),
+             ("fonte", 3, "e")],
+            [Papel.CORPO, Papel.MONO, Papel.MONO, Papel.PEQUENO, Papel.ETIQUETA],
+        )  # fmt: skip
         pp.addWidget(self.tabela_problemas)
         self.painel_problemas.hide()
         col.addWidget(self.painel_problemas)
@@ -299,6 +351,17 @@ class TelaEditor(QWidget):
         self.ver_execucao.hide()
         e.addWidget(self.ver_execucao)
         e.addStretch(1)
+        self.botao_problemas = botao("", "link")
+        self.botao_problemas.setFont(t.fonte(Papel.ETIQUETA))
+        self.botao_problemas.setToolTip("Mostrar ou ocultar a lista de problemas")
+        self.botao_problemas.clicked.connect(self._alternar_problemas)
+        e.addWidget(self.botao_problemas)
+        self.estado_lint = rotulo("", Papel.ETIQUETA, "3")
+        e.addWidget(self.estado_lint)
+        self.ponto_ls = Ponto(6, "tinta_3")
+        self.estado_ls = rotulo("", Papel.ETIQUETA, "3")
+        e.addWidget(self.ponto_ls)
+        e.addWidget(self.estado_ls)
         self.posicao = rotulo("", Papel.ETIQUETA, "2")
         self.linguagem = rotulo("", Papel.ETIQUETA, "2")
         self.situacao_arquivo = rotulo("", Papel.ETIQUETA, "2")
@@ -326,7 +389,21 @@ class TelaEditor(QWidget):
         sessao.execucao_linha.connect(self._execucao_linha)
         sessao.execucao_concluida.connect(self._execucao_concluida)
         sessao.antes_de_executar = self._salvar_e_seguir
+
+        self._tabela_pendente = QTimer(self)
+        self._tabela_pendente.setSingleShot(True)
+        self._tabela_pendente.setInterval(250)
+        self._tabela_pendente.timeout.connect(self._preencher_problemas)
+        self._estrutura_pendente = QTimer(self)
+        self._estrutura_pendente.setSingleShot(True)
+        self._estrutura_pendente.setInterval(350)
+        self._estrutura_pendente.timeout.connect(self._pedir_estrutura)
+        self.assistente.diagnosticos.connect(self._diagnosticos)
+        self.assistente.lint_pronto.connect(self._lint_pronto)
+        self.assistente.estado_linguagem.connect(self._estado_linguagem)
+        self.assistente.estado_lint.connect(self._estado_lint)
         self._mostrar_vazio()
+        self._atualizar_contagem()
 
     # --- ciclo de vida ------------------------------------------------------------------------
 
@@ -347,7 +424,21 @@ class TelaEditor(QWidget):
         self.editor.cursor_mudou.connect(self._cursor_mudou)
         self.editor.salvar_pedido.connect(self._salvar)
         self.editor.acao_pedida.connect(lambda nome: self.sessao.executar(Etapa(nome)))
+        if hasattr(self.editor, "texto_mudou"):
+            self.editor.texto_mudou.connect(self.assistente.mudar)
+            self.editor.pedido_linguagem.connect(self._pedido_linguagem)
+            self.editor.abrir_em.connect(lambda c, lin, col: self.abrir(c, lin, col))
         self._lugar_editor.addWidget(self.editor)
+        self._ligar_assistente()
+
+    def _ligar_assistente(self) -> None:
+        """O servidor de linguagem e o lint sobem na primeira vez que o editor aparece."""
+        if not self._assistente_ligado:
+            self._assistente_ligado = True
+            self.assistente.definir_projeto(self.sessao.projeto)
+
+    def encerrar(self) -> None:
+        self.assistente.encerrar()
 
     def _rodar(self, funcao, ao_concluir) -> None:
         tarefa = tarefas.em_segundo_plano(funcao, self)
@@ -359,11 +450,31 @@ class TelaEditor(QWidget):
     # --- projeto e árvore ---------------------------------------------------------------------
 
     def _projeto_mudou(self, projeto: Projeto | None) -> None:
+        anterior = getattr(self, "_raiz", None)
+        self._raiz = projeto.raiz if projeto is not None else None
+        if projeto is not None and projeto.raiz == anterior:
+            # o mesmo projeto relido (arquivo novo, placa trocada): abas e edições ficam
+            self.nome_projeto.setText(projeto.nome)
+            if self._assistente_ligado:
+                self.assistente.projeto = projeto
+                self.assistente.reiniciar()
+                self.assistente.conferir(agora=True)
+            self.recarregar_arvore()
+            return
         for caminho in list(self.abas):
             self._fechar(caminho, forcar=True)
-        self._problemas.clear()
+        for caminho in list(self._ocultos):
+            if self.editor is not None:
+                self.editor.fechar(caminho)
+        self._ocultos.clear()
+        for fonte in self._fontes.values():
+            fonte.clear()
+        self._gerais = []
         self.painel_problemas.hide()
+        self._atualizar_contagem()
         self.arvore.clear()
+        if self._assistente_ligado:
+            self.assistente.definir_projeto(projeto)
         if projeto is None:
             self._mostrar_vazio()
             return
@@ -400,6 +511,11 @@ class TelaEditor(QWidget):
                 self._grupo_de[arquivo] = g.nome
             topo.setExpanded(True)
         self._marcar_arvore()
+        recem_criado = getattr(self, "_abrir_depois", None)
+        if recem_criado is not None:
+            self._abrir_depois = None
+            self.abrir(recem_criado)
+            return
         # ao abrir um projeto, o RTL principal já aparece aberto
         if not self.abas and projeto is not None:
             topo_rtl = next(
@@ -409,11 +525,19 @@ class TelaEditor(QWidget):
             if topo_rtl is not None:
                 self.abrir(topo_rtl)
 
+    def problemas_de(self, caminho: Path) -> list[Local]:
+        return [x for fonte in self._fontes.values() for x in fonte.get(caminho, [])]
+
+    @property
+    def _problemas(self) -> dict[Path, list[Local]]:
+        """Todos os problemas, de todas as fontes, por arquivo."""
+        caminhos = {c for fonte in self._fontes.values() for c in fonte}
+        return {c: self.problemas_de(c) for c in caminhos if self.problemas_de(c)}
+
     def _marcar_arvore(self) -> None:
         for caminho, widget in getattr(self, "_itens", {}).items():
-            widget.definir(
-                caminho in self.sujos, len(self._problemas.get(caminho, [])), caminho == self.atual
-            )
+            erros = sum(1 for x in self.problemas_de(caminho) if x.gravidade == "erro")
+            widget.definir(caminho in self.sujos, erros, caminho == self.atual)
 
     def _clicou_item(self, item: QTreeWidgetItem) -> None:
         dado = item.data(0, PAPEL_CAMINHO)
@@ -436,20 +560,26 @@ class TelaEditor(QWidget):
             self._pendentes_ao_abrir.append((caminho, linha, coluna))
         self._rodar(lambda: (caminho, fontes.ler(projeto, caminho)), self._aberto)
 
+    def _criar_aba(self, caminho: Path, texto: str) -> None:
+        aba = Aba(caminho, caminho.name)
+        aba.clicada.connect(self._ativar)
+        aba.fechar.connect(self._fechar)
+        self._lay_abas.insertWidget(self._lay_abas.count() - 1, aba)
+        self.abas[caminho] = aba
+        self._textos[caminho] = texto
+        self._ocultos.discard(caminho)
+        if str(caminho) not in self._vigia.files():
+            self._vigia.addPath(str(caminho))
+        self.assistente.abrir(caminho, texto)
+
     def _aberto(self, par: tuple[Path, str]) -> None:
         caminho, texto = par
         if caminho not in self.abas:
-            aba = Aba(caminho, caminho.name)
-            aba.clicada.connect(self._ativar)
-            aba.fechar.connect(self._fechar)
-            self._lay_abas.insertWidget(self._lay_abas.count() - 1, aba)
-            self.abas[caminho] = aba
-            self._textos[caminho] = texto
+            self._criar_aba(caminho, texto)
             self.editor.abrir(caminho, texto)
-            if str(caminho) not in self._vigia.files():
-                self._vigia.addPath(str(caminho))
-            if self._problemas.get(caminho):
-                self.editor.problemas(caminho, self._problemas[caminho])
+            for fonte in FONTES_PROBLEMAS:
+                if self._fontes[fonte].get(caminho):
+                    self.editor.problemas(caminho, self._fontes[fonte][caminho], fonte)
         self._ativar(caminho)
         for pendente in [p for p in self._pendentes_ao_abrir if p[0] == caminho]:
             self._pendentes_ao_abrir.remove(pendente)
@@ -465,8 +595,13 @@ class TelaEditor(QWidget):
         rel = projeto.relativo(caminho) if projeto else caminho.name
         self.caminho.setText(f"{projeto.nome if projeto else ''} / {rel}")
         grupo = getattr(self, "_grupo_de", {}).get(caminho, "Outros")
-        self.contexto.setText(CONTEXTOS.get(grupo, ""))
+        contexto = CONTEXTOS.get(grupo, "")
+        if caminho.suffix.lower() in {".sv", ".svh"}:
+            contexto = contexto.replace("em Verilog", "em SystemVerilog")
+        self.contexto.setText(contexto)
         self._atualizar_abas()
+        self._atualizar_ferramentas()
+        self._estrutura_pendente.start()
 
     def _atualizar_abas(self) -> None:
         for caminho, aba in self.abas.items():
@@ -489,6 +624,9 @@ class TelaEditor(QWidget):
             aba.deleteLater()
         self.sujos.discard(caminho)
         self._textos.pop(caminho, None)
+        self.assistente.fechar(caminho)
+        if self._fontes["verible"].pop(caminho, None) is not None:
+            self._tabela_pendente.start()
         if str(caminho) in self._vigia.files():
             self._vigia.removePath(str(caminho))
         if self.editor is not None:
@@ -503,6 +641,8 @@ class TelaEditor(QWidget):
         self._atualizar_abas()
 
     def _mostrar_vazio(self) -> None:
+        self.estrutura.mensagem("Abra um arquivo Verilog para ver a estrutura.")
+        self.botao_formatar.setEnabled(False)
         self.caminho.setText("")
         self.contexto.setText("Escolha um arquivo à esquerda. Cada um tem um papel no fluxo.")
         self.posicao.setText("")
@@ -512,6 +652,8 @@ class TelaEditor(QWidget):
     # --- gravar -------------------------------------------------------------------------------
 
     def _sujo_mudou(self, caminho: Path, sujo: bool) -> None:
+        if sujo and caminho not in self.abas and caminho in self._ocultos:
+            self._criar_aba(caminho, self._textos.get(caminho, ""))
         if sujo:
             self.sujos.add(caminho)
         else:
@@ -548,6 +690,8 @@ class TelaEditor(QWidget):
             self.editor.marcar_salvo(caminho, versao)
         self.sujos.discard(caminho)
         self._atualizar_abas()
+        if self.assistente.e_hdl(caminho):
+            self.assistente.conferir()
         if self._seguir_depois_de_salvar and not self._salvando:
             seguir, self._seguir_depois_de_salvar = self._seguir_depois_de_salvar, None
             seguir()
@@ -629,39 +773,248 @@ class TelaEditor(QWidget):
         self.mostrar_problemas(locais)
 
     def mostrar_problemas(self, locais: list[Local]) -> None:
+        """Problemas de uma execução (fluxo): abre o painel e leva ao primeiro."""
         projeto = self.sessao.projeto
         if projeto is None:
             return
-        antigos = set(self._problemas)
-        self._problemas = {}
-        for local in locais:
-            self._problemas.setdefault((projeto.raiz / local.arquivo).resolve(), []).append(local)
-        if self.editor is not None:
-            for caminho in antigos | set(self._problemas):
-                if caminho in self.abas:
-                    self.editor.problemas(caminho, self._problemas.get(caminho, []))
-        self.tabela_problemas.limpar()
+        self._definir_fonte("fluxo", locais_por_arquivo(projeto.raiz, locais))
         if not locais:
-            self.painel_problemas.hide()
-            self._marcar_arvore()
             return
-        erros = sum(1 for x in locais if x.gravidade == "erro")
-        self.titulo_problemas.setText(
-            f"PROBLEMAS · {erros} ERRO(S) · {len(locais) - erros} AVISO(S)"
-        )
-        for local in locais:
-            caminho = (projeto.raiz / local.arquivo).resolve()
-            marca = rotulo("✕" if local.gravidade == "erro" else "!", Papel.CORPO_FORTE,
-                           "falha" if local.gravidade == "erro" else "aviso")  # fmt: skip
-            self.tabela_problemas.adicionar(
-                [marca, local.arquivo, str(local.linha), local.mensagem],
-                ao_clicar=lambda c=caminho, x=local: self.abrir(c, x.linha, x.coluna),
-                tons=[None, "2", "2", None],
-            )
         self.painel_problemas.show()
-        self._marcar_arvore()
         primeiro = locais[0]
         self.abrir((projeto.raiz / primeiro.arquivo).resolve(), primeiro.linha, primeiro.coluna)
+
+    def _definir_fonte(
+        self, fonte: str, por_arquivo: dict[Path, list[Local]], so: Path | None = None
+    ) -> None:
+        """Troca os problemas de uma fonte (todos, ou só de um arquivo) e repinta o que mudou."""
+        atual = self._fontes[fonte]
+        if so is not None:
+            mudaram = {so}
+            if por_arquivo.get(so):
+                atual[so] = por_arquivo[so]
+            else:
+                atual.pop(so, None)
+        else:
+            mudaram = set(atual) | set(por_arquivo)
+            self._fontes[fonte] = atual = {c: x for c, x in por_arquivo.items() if x}
+        if self.editor is not None:
+            for caminho in mudaram:
+                if caminho in self.abas:
+                    self.editor.problemas(caminho, atual.get(caminho, []), fonte)
+        self._marcar_arvore()
+        self._atualizar_contagem()
+        self._tabela_pendente.start()
+
+    def _todos_os_problemas(self) -> list[tuple[str, Local]]:
+        todos = [(f, x) for f in FONTES_PROBLEMAS for lista in self._fontes[f].values()
+                 for x in lista]  # fmt: skip
+        todos.sort(key=lambda p: (p[1].gravidade != "erro", p[1].arquivo, p[1].linha))
+        return todos
+
+    def _atualizar_contagem(self) -> None:
+        todos = self._todos_os_problemas()
+        erros = sum(1 for _, x in todos if x.gravidade == "erro") + len(self._gerais)
+        avisos = len(todos) + len(self._gerais) - erros
+        if not erros and not avisos:
+            self.painel_problemas.hide()
+            self.botao_problemas.setText("✓ sem problemas")
+        else:
+            self.botao_problemas.setText(f"✕ {erros}   ! {avisos}")
+        self.botao_problemas.setProperty("tom", "falha" if erros else ("aviso" if avisos else "ok"))
+        repolir(self.botao_problemas)
+
+    def _alternar_problemas(self) -> None:
+        if self.painel_problemas.isVisible():
+            self.painel_problemas.hide()
+        else:
+            self._preencher_problemas()
+            self.painel_problemas.show()
+
+    def _preencher_problemas(self) -> None:
+        projeto = self.sessao.projeto
+        if projeto is None:
+            return
+        todos = self._todos_os_problemas()
+        erros = sum(1 for _, x in todos if x.gravidade == "erro") + len(self._gerais)
+        self.titulo_problemas.setText(
+            f"PROBLEMAS · {erros} ERRO(S) · {len(todos) + len(self._gerais) - erros} AVISO(S)"
+        )
+        self.tabela_problemas.limpar()
+        for geral in self._gerais:
+            marca = rotulo("✕", Papel.CORPO_FORTE, "falha")
+            self.tabela_problemas.adicionar([marca, "—", "", geral, "Verilator"],
+                                            tons=[None, "3", "3", None, "3"])  # fmt: skip
+        for fonte, local in todos[:300]:
+            caminho = (projeto.raiz / local.arquivo).resolve()
+            erro = local.gravidade == "erro"
+            marca = rotulo("✕" if erro else "!", Papel.CORPO_FORTE, "falha" if erro else "aviso")
+            codigo = local.origem.partition(" · ")[2]
+            nome_fonte = NOMES_FONTE[fonte] + (f" · {codigo}" if codigo else "")
+            self.tabela_problemas.adicionar(
+                [marca, local.arquivo, str(local.linha), local.mensagem, nome_fonte],
+                ao_clicar=lambda c=caminho, x=local: self.abrir(c, x.linha, x.coluna),
+                tons=[None, "2", "2", None, "3"],
+            )
+        if not todos and not self._gerais:
+            self.painel_problemas.hide()
+
+    # --- assistente: Verible e Verilator -----------------------------------------------------
+
+    def _diagnosticos(self, caminho: Path, locais: list[Local]) -> None:
+        self._definir_fonte("verible", {caminho: locais}, so=caminho)
+        if caminho == self.atual:
+            self._estrutura_pendente.start()
+
+    def _lint_pronto(self, resultado) -> None:
+        projeto = self.sessao.projeto
+        if projeto is None:
+            return
+        self._gerais = list(resultado.gerais)
+        self._definir_fonte("verilator", locais_por_arquivo(projeto.raiz, resultado.locais))
+        n = len(resultado.locais) + len(resultado.gerais)
+        self.estado_lint.setText("LINT ✓" if not n else f"LINT · {n}")
+        resumo = f"{resultado.erros} erro(s), {resultado.avisos} aviso(s)." if n else "nada."
+        self.estado_lint.setToolTip(f"O Verilator conferiu o projeto depois de salvar: {resumo}")
+
+    def _estado_lint(self, estado: str, detalhe: str) -> None:
+        if estado == "rodando":
+            self.estado_lint.setText("LINT …")
+        elif estado == "indisponivel":
+            self.estado_lint.setText("LINT —")
+            self.estado_lint.setToolTip(f"O lint do Verilator não rodou: {detalhe}")
+
+    def _estado_linguagem(self, estado: str, detalhe: str) -> None:
+        textos = {
+            "iniciando": ("VERIBLE …", "tinta_3",
+                          "Subindo o servidor de linguagem (Verible) na imagem de ferramentas."),
+            "ativo": ("VERIBLE", "ok", "Servidor de linguagem ativo: erros ao digitar, Formatar, "
+                      "F12 vai à definição, Shift+F12 mostra os usos, F2 renomeia."),
+            "indisponivel": ("SEM VERIBLE", "aviso",
+                             f"Servidor de linguagem indisponível — o editor funciona, mas sem "
+                             f"erros ao digitar nem formatação. {detalhe}"),
+            "parado": ("", "tinta_3", ""),
+        }  # fmt: skip
+        texto, token, dica = textos.get(estado, ("", "tinta_3", ""))
+        self.estado_ls.setText(texto)
+        self.estado_ls.setToolTip(dica)
+        self.ponto_ls.definir_token(token)
+        self.ponto_ls.setVisible(bool(texto))
+        self.ponto_ls.setToolTip(dica)
+        self._atualizar_ferramentas()
+        if estado == "ativo":
+            self._estrutura_pendente.start()
+        elif estado == "indisponivel" and self.atual is not None:
+            self.estrutura.mensagem("Estrutura indisponível: o servidor de linguagem não subiu.")
+
+    def _atualizar_ferramentas(self) -> None:
+        hdl = self.atual is not None and self.assistente.e_hdl(self.atual)
+        self.botao_formatar.setEnabled(hdl and self.assistente.ativo)
+
+    def _pedir_estrutura(self) -> None:
+        caminho = self.atual
+        if caminho is None or not self.assistente.e_hdl(caminho):
+            self.estrutura.mensagem("A estrutura aparece para arquivos Verilog e SystemVerilog.")
+            return
+        if not self.assistente.ativo:
+            return
+
+        def chegou(resultado, erro) -> None:
+            if caminho == self.atual and not erro:
+                self.estrutura.definir([s.como_dict() for s in lg.simbolos(resultado)])
+
+        self.assistente.pedir("textDocument/documentSymbol", lg.documento(caminho), chegou)
+
+    def _textos_para(self, caminhos: list[Path]) -> dict[Path, str]:
+        """Texto dos arquivos citados que o Monaco ainda não carregou (dentro do projeto)."""
+        projeto = self.sessao.projeto
+        textos: dict[Path, str] = {}
+        if projeto is None:
+            return textos
+        for c in dict.fromkeys(caminhos):
+            if c in self.abas or c in self._ocultos:
+                continue
+            try:
+                textos[c] = fontes.ler(projeto, c)
+            except (fontes.ErroArquivo, OSError):
+                continue
+            self._textos[c] = textos[c]
+            self._ocultos.add(c)
+        return textos
+
+    def _pedido_linguagem(self, ident: int, tipo: str, caminho: Path, dados: dict) -> None:
+        editor = self.editor
+        lugar = lg.em(caminho, dados.get("linha", 1), dados.get("coluna", 1))
+
+        def lugares(r) -> tuple[object, dict]:
+            achados = lg.lugares(r)
+            textos = self._textos_para([x.caminho for x in achados])
+            return [{"caminho": str(x.caminho), **x.faixa.como_dict()} for x in achados], textos
+
+        def renomear(r) -> tuple[object, dict]:
+            mudancas = lg.edicoes_de_espaco(r)
+            textos = self._textos_para(list(mudancas))
+            lista = [{"caminho": str(c), "edicoes": [e.como_dict() for e in es]}
+                     for c, es in mudancas.items()]  # fmt: skip
+            return lista, textos
+
+        opcoes_formato = {"tabSize": 4, "insertSpaces": True}
+        pedidos = {
+            "formatar": ("textDocument/formatting",
+                         {**lg.documento(caminho), "options": opcoes_formato},
+                         lambda r: ([e.como_dict() for e in lg.edicoes(r)], {})),
+            "definicao": ("textDocument/definition", lugar, lugares),
+            "referencias": ("textDocument/references",
+                            {**lugar, "context": {"includeDeclaration": True}}, lugares),
+            "destaques": ("textDocument/documentHighlight", lugar,
+                          lambda r: ([lg.Faixa.do_lsp(x["range"]).como_dict() for x in r or []],
+                                     {})),
+            "simbolos": ("textDocument/documentSymbol", lg.documento(caminho),
+                         lambda r: ([s.como_dict() for s in lg.simbolos(r)], {})),
+            "dica": ("textDocument/hover", lugar, lambda r: (lg.dica(r) or None, {})),
+            "renomear": ("textDocument/rename", {**lugar, "newName": dados.get("novo", "")},
+                         renomear),
+        }  # fmt: skip
+        if tipo not in pedidos or editor is None:
+            if editor is not None:
+                editor.responder(ident, None)
+            return
+        metodo, params, traduzir = pedidos[tipo]
+
+        def chegou(resultado, erro) -> None:
+            if erro or self.editor is not editor:
+                editor.responder(ident, None)
+                return
+            valor, textos = traduzir(resultado)
+            editor.responder(ident, valor, textos)
+
+        self.assistente.pedir(metodo, params, chegou)
+
+    # --- arquivo novo ------------------------------------------------------------------------
+
+    def novo_arquivo(self) -> None:
+        projeto = self.sessao.projeto
+        if projeto is None:
+            return
+        from axillares.gui.dialogos import DialogoNovoArquivo
+
+        dialogo = DialogoNovoArquivo(projeto, self)
+        if dialogo.exec() != DialogoNovoArquivo.DialogCode.Accepted:
+            return
+        self.criar_arquivo(**dialogo.escolhas())
+
+    def criar_arquivo(self, relativo: str, tipo: str = "modulo") -> None:
+        projeto = self.sessao.projeto
+        if projeto is None:
+            return
+
+        def criado(novo: fontes.ArquivoNovo) -> None:
+            if novo.aviso:
+                self.sessao.erro.emit(novo.aviso)
+            self.sessao.abrir(projeto.raiz)  # relê o axil.toml e as listas de fontes
+            self._abrir_depois = novo.caminho
+
+        self._rodar(lambda: fontes.criar(projeto, relativo, tipo), criado)
 
     @property
     def tem_alteracoes(self) -> bool:

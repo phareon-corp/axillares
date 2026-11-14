@@ -12,7 +12,10 @@ window.MonacoEnvironment = {
 };
 
 const estado = { ponte: null, modelos: new Map(), visoes: new Map(), atual: null, salvos: new Map(),
-                 editor: null, fila: [], decoracoes: new Map() };
+                 editor: null, fila: [], decoracoes: new Map(), caminhoDe: new WeakMap(),
+                 mudancas: new Map(), respostas: new Map(), proximo: 1 };
+const ESPERA_MUDANCA_MS = 250;   // digitar rápido não inunda o servidor de linguagem
+const LIMITE_RESPOSTA_MS = 8000;
 
 const LINGUAGENS = { ".v": "systemverilog", ".sv": "systemverilog", ".vh": "systemverilog",
   ".svh": "systemverilog", ".sdc": "tcl", ".tcl": "tcl", ".xdc": "tcl", ".py": "python",
@@ -38,15 +41,29 @@ window.axil = {
 
   abrir(caminho, texto) {
     if (this._ou_fila("abrir", [caminho, texto])) return;
-    let modelo = estado.modelos.get(caminho);
-    if (!modelo) {
-      modelo = monaco.editor.createModel(texto, linguagemDe(caminho), monaco.Uri.file(caminho));
-      modelo.updateOptions({ tabSize: 4, insertSpaces: true });
-      estado.modelos.set(caminho, modelo);
-      estado.salvos.set(caminho, modelo.getAlternativeVersionId());
-      modelo.onDidChangeContent(() => avisarSujo(caminho));
-    }
+    criarModelo(caminho, texto);
     mostrar(caminho);
+  },
+
+  // Arquivos citados por definição/referências/renomear, ainda não abertos em aba: o Monaco
+  // precisa do modelo para espiar e editar. Viram aba se forem alterados.
+  garantirModelos(textos) {
+    if (this._ou_fila("garantirModelos", [textos])) return;
+    for (const [caminho, texto] of Object.entries(textos || {})) criarModelo(caminho, texto);
+  },
+
+  resposta(id, dados) {
+    const resolver = estado.respostas.get(id);
+    if (!resolver) return;
+    estado.respostas.delete(id);
+    if (dados && dados.textos) window.axil.garantirModelos(dados.textos);
+    resolver(dados ? dados.resultado : null);
+  },
+
+  acao(nome) {   // ação do Monaco pelo id: formatar, estrutura, renomear…
+    if (this._ou_fila("acao", [nome])) return;
+    const a = estado.editor.getAction(nome);
+    if (a) { estado.editor.focus(); a.run(); }
   },
 
   recarregar(caminho, texto) {   // o arquivo mudou no disco e não havia alteração pendente
@@ -59,6 +76,7 @@ window.axil = {
 
   fechar(caminho) {
     const modelo = estado.modelos.get(caminho);
+    clearTimeout(estado.mudancas.get(caminho)); estado.mudancas.delete(caminho);
     if (modelo) modelo.dispose();
     estado.modelos.delete(caminho); estado.visoes.delete(caminho); estado.salvos.delete(caminho);
     if (estado.atual === caminho) { estado.atual = null; estado.editor.setModel(null);
@@ -79,23 +97,29 @@ window.axil = {
         estado.ponte.salvar(caminho, modelo.getValue(), modelo.getAlternativeVersionId());
   },
 
-  problemas(caminho, lista) {   // [{linha, coluna, mensagem, gravidade}]
-    if (this._ou_fila("problemas", [caminho, lista])) return;
+  // dono: "fluxo" (a execução falhou), "verible" (ao digitar) ou "verilator" (lint ao salvar).
+  problemas(caminho, lista, dono) {   // [{linha, coluna, mensagem, gravidade, origem}]
+    dono = dono || "fluxo";
+    if (this._ou_fila("problemas", [caminho, lista, dono])) return;
     const modelo = estado.modelos.get(caminho);
-    if (!modelo) { estado.pendentes = estado.pendentes || new Map(); estado.pendentes.set(caminho, lista); return; }
+    if (!modelo) { estado.pendentes = estado.pendentes || new Map();
+                   estado.pendentes.set(caminho + "\u0000" + dono, [caminho, lista, dono]); return; }
     const S = monaco.MarkerSeverity;
-    // linha inteira tingida + ponto na margem: o erro se vê de longe, mesmo no fim da linha
-    const antigas = estado.decoracoes.get(caminho) || [];
-    estado.decoracoes.set(caminho, modelo.deltaDecorations(antigas, lista.map(p => ({
+    // Falha do fluxo: linha inteira tingida + ponto na margem — se vê de longe. Ao digitar, só o
+    // sublinhado e o ponto: tingir a linha a cada tecla seria um pisca-pisca.
+    const chave = caminho + "\u0000" + dono;
+    const inteira = dono === "fluxo";
+    const antigas = estado.decoracoes.get(chave) || [];
+    estado.decoracoes.set(chave, modelo.deltaDecorations(antigas, lista.map(p => ({
       range: new monaco.Range(p.linha, 1, p.linha, 1),
       options: { isWholeLine: true,
-                 className: p.gravidade === "erro" ? "linha-erro" : "linha-aviso",
+                 className: !inteira ? null : p.gravidade === "erro" ? "linha-erro" : "linha-aviso",
                  glyphMarginClassName: p.gravidade === "erro" ? "glifo-erro" : "glifo-aviso",
                  glyphMarginHoverMessage: { value: p.mensagem },
                  overviewRuler: { position: monaco.editor.OverviewRulerLane.Full,
                                   color: getComputedStyle(document.documentElement).getPropertyValue(
                                     p.gravidade === "erro" ? "--falha" : "--aviso").trim() } } }))));
-    monaco.editor.setModelMarkers(modelo, "axillares", lista.map(p => {
+    monaco.editor.setModelMarkers(modelo, dono, lista.map(p => {
       const fim = modelo.getWordAtPosition({ lineNumber: p.linha, column: Math.max(1, p.coluna) });
       return { startLineNumber: p.linha, startColumn: Math.max(1, p.coluna),
                endLineNumber: p.linha, endColumn: fim ? fim.endColumn : Math.max(1, p.coluna) + 1,
@@ -118,9 +142,95 @@ window.axil = {
     const m = estado.atual && estado.modelos.get(estado.atual);
     return JSON.stringify({ atual: estado.atual, linguagem: m ? m.getLanguageId() : null,
       linhas: m ? m.getLineCount() : 0, abertos: [...estado.modelos.keys()],
-      marcadores: m ? monaco.editor.getModelMarkers({ resource: m.uri }).length : 0 });
+      marcadores: m ? monaco.editor.getModelMarkers({ resource: m.uri }).length : 0,
+      texto: m ? m.getValue() : "" });
   },
 };
+
+function criarModelo(caminho, texto) {
+  let modelo = estado.modelos.get(caminho);
+  if (modelo) return modelo;
+  modelo = monaco.editor.createModel(texto, linguagemDe(caminho), monaco.Uri.file(caminho));
+  modelo.updateOptions({ tabSize: 4, insertSpaces: true });
+  estado.modelos.set(caminho, modelo);
+  estado.caminhoDe.set(modelo, caminho);
+  estado.salvos.set(caminho, modelo.getAlternativeVersionId());
+  modelo.onDidChangeContent(() => { avisarSujo(caminho); agendarMudanca(caminho); });
+  return modelo;
+}
+
+function agendarMudanca(caminho) {
+  clearTimeout(estado.mudancas.get(caminho));
+  estado.mudancas.set(caminho, setTimeout(() => enviarMudanca(caminho), ESPERA_MUDANCA_MS));
+}
+
+function enviarMudanca(caminho) {   // manda já o que estiver pendente (antes de um pedido)
+  if (!estado.mudancas.has(caminho)) return;
+  clearTimeout(estado.mudancas.get(caminho)); estado.mudancas.delete(caminho);
+  const modelo = estado.modelos.get(caminho);
+  if (modelo && estado.ponte) estado.ponte.mudou(caminho, modelo.getValue());
+}
+
+// Pedido ao servidor de linguagem, pelo Python. Resolve com null se não houver resposta.
+function pedir(tipo, modelo, dados) {
+  const caminho = estado.caminhoDe.get(modelo);
+  if (!caminho || !estado.ponte) return Promise.resolve(null);
+  enviarMudanca(caminho);
+  return new Promise(resolver => {
+    const id = estado.proximo++;
+    estado.respostas.set(id, resolver);
+    estado.ponte.pedir(id, tipo, caminho, JSON.stringify(dados || {}));
+    setTimeout(() => window.axil.resposta(id, null), LIMITE_RESPOSTA_MS);
+  });
+}
+
+function faixa(f) { return new monaco.Range(f.linha, f.coluna, f.linha_fim, f.coluna_fim); }
+function posicao(p) { return { linha: p.lineNumber, coluna: p.column }; }
+function lugares(lista) {
+  return (lista || []).map(l => ({ uri: monaco.Uri.file(l.caminho), range: faixa(l) }));
+}
+
+function registrarLinguagem() {
+  const L = monaco.languages, id = "systemverilog";
+  const simbolo = s => ({ name: s.nome, detail: s.tipo, kind: Math.max(0, (s.codigo || 13) - 1),
+    tags: [], range: faixa(s), selectionRange: faixa(s), children: (s.filhos || []).map(simbolo) });
+  L.registerDocumentFormattingEditProvider(id, { displayName: "Verible",
+    async provideDocumentFormattingEdits(m) {
+      return ((await pedir("formatar", m)) || []).map(e => ({ range: faixa(e), text: e.texto }));
+    } });
+  L.registerDefinitionProvider(id, {
+    async provideDefinition(m, p) { return lugares(await pedir("definicao", m, posicao(p))); } });
+  L.registerReferenceProvider(id, {
+    async provideReferences(m, p) { return lugares(await pedir("referencias", m, posicao(p))); } });
+  L.registerDocumentHighlightProvider(id, {
+    async provideDocumentHighlights(m, p) {
+      return ((await pedir("destaques", m, posicao(p))) || []).map(f => ({ range: faixa(f),
+        kind: L.DocumentHighlightKind.Text }));
+    } });
+  L.registerDocumentSymbolProvider(id, { displayName: "Verible",
+    async provideDocumentSymbols(m) { return ((await pedir("simbolos", m)) || []).map(simbolo); } });
+  L.registerHoverProvider(id, {
+    async provideHover(m, p) {
+      const texto = await pedir("dica", m, posicao(p));
+      return texto ? { contents: [{ value: texto }] } : null;
+    } });
+  L.registerRenameProvider(id, {
+    async provideRenameEdits(m, p, novo) {
+      const r = await pedir("renomear", m, { ...posicao(p), novo });
+      if (!r) return { edits: [], rejectReason: "O servidor de linguagem não respondeu." };
+      return { edits: r.flatMap(a => a.edicoes.map(e => ({ resource: monaco.Uri.file(a.caminho),
+        versionId: undefined, textEdit: { range: faixa(e), text: e.texto } }))) };
+    } });
+  // Ir à definição em outro arquivo: quem abre a aba é o Python.
+  monaco.editor.registerEditorOpener({
+    openCodeEditor(_fonte, recurso, selecao) {
+      let linha = 1, coluna = 1;
+      if (selecao && "startLineNumber" in selecao) { linha = selecao.startLineNumber; coluna = selecao.startColumn; }
+      else if (selecao && "lineNumber" in selecao) { linha = selecao.lineNumber; coluna = selecao.column; }
+      estado.ponte.abrirEm(recurso.path, linha, coluna);
+      return true;
+    } });
+}
 
 function mostrar(caminho) {
   if (estado.atual && estado.editor.getModel()) estado.visoes.set(estado.atual, estado.editor.saveViewState());
@@ -129,9 +239,12 @@ function mostrar(caminho) {
   const visao = estado.visoes.get(caminho);
   if (visao) estado.editor.restoreViewState(visao);
   document.getElementById("editor").classList.add("ativo");
-  if (estado.pendentes && estado.pendentes.has(caminho)) {
-    const lista = estado.pendentes.get(caminho); estado.pendentes.delete(caminho);
-    window.axil.problemas(caminho, lista);
+  if (estado.pendentes) {
+    for (const [chave, args] of [...estado.pendentes]) {
+      if (args[0] !== caminho) continue;
+      estado.pendentes.delete(chave);
+      window.axil.problemas(...args);
+    }
   }
   estado.editor.focus();
   avisarCursor();
@@ -212,8 +325,11 @@ new QWebChannel(qt.webChannelTransport, canal => {
     estado.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => estado.ponte.acao("sintese"));
     estado.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
                              () => estado.ponte.acao("gds"));
+    estado.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.Enter,
+                             () => estado.ponte.acao("fpga"));
     estado.editor.onDidChangeCursorPosition(avisarCursor);
     registrarDidatica();
+    registrarLinguagem();
     const fila = estado.fila; estado.fila = [];
     for (const [nome, args] of fila) window.axil[nome](...args);
     estado.ponte.pronto();

@@ -112,3 +112,21 @@ def celula(nome: str) -> tuple[str, str] | None:
         f"força {forca}: transistores {'maiores' if forca != '1' else 'mínimos'}" if forca else ""
     )
     return texto, detalhe
+
+
+@dataclass(frozen=True)
+class ExplicacaoLint:
+    o_que: str
+    fazer: str
+
+
+def aviso_de_lint(codigo: str) -> ExplicacaoLint | None:
+    """O que um aviso do lint (WIDTHEXPAND, LATCH…) quer dizer e o que fazer."""
+    dados = _ler("lint.toml").get(codigo.upper())
+    return ExplicacaoLint(**dados) if dados else None
+
+
+def regra_do_verible(regra: str) -> ExplicacaoLint | None:
+    """Regras de estilo do Verible (always-comb, case-missing-default…)."""
+    dados = _ler("lint.toml").get("verible", {}).get(regra)
+    return ExplicacaoLint(**dados) if dados else None

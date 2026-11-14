@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QIcon
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -210,6 +210,7 @@ class JanelaPrincipal(QMainWindow):
         fabrica_motor: Callable[[str], Motor] = obter_motor,
         projeto_inicial: Path | None = None,
         fabrica_editor: Callable[[], QWidget] | None = None,
+        fabrica_assistente: Callable[[], QObject] | None = None,
     ) -> None:
         super().__init__()
         self.setWindowTitle("Axillares")
@@ -218,6 +219,7 @@ class JanelaPrincipal(QMainWindow):
         self.setMinimumSize(900, 600)
         self._fabrica_motor = fabrica_motor
         self._fabrica_editor = fabrica_editor
+        self._fabrica_assistente = fabrica_assistente
         self.areas: list[AreaProjeto] = []
         self.ativa: AreaProjeto | None = None
         self.indice = ABERTURA
@@ -352,7 +354,10 @@ class JanelaPrincipal(QMainWindow):
         if existente is not None:
             self.ativar(existente)
             return
-        area = AreaProjeto(projeto, self._fabrica_motor, self._fabrica_editor, self._fontes)
+        area = AreaProjeto(
+            projeto, self._fabrica_motor, self._fabrica_editor, self._fontes,
+            self._fabrica_assistente,
+        )  # fmt: skip
         area.sessao.erro.connect(self.aviso.mostrar)
         area.sessao.pedir_tela.connect(lambda nome, arg, a=area: self._pedido_de_tela(a, nome, arg))
         area.sessao.execucoes_mudaram.connect(self._execucoes_mudaram)

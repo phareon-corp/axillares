@@ -93,6 +93,10 @@ class Perfil(_Modelo):
     visualizador: dict[str, str] = Field(
         default_factory=dict, description="Executáveis usados para visualizar, dentro da imagem."
     )
+    editor: dict[str, str] = Field(
+        default_factory=dict,
+        description="Executáveis do editor (lint, servidor de linguagem), dentro da imagem.",
+    )
     ferramentas: list[Ferramenta] = Field(min_length=1)
 
     @property

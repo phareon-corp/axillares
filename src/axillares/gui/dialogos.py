@@ -234,3 +234,131 @@ class DialogoNovoProjeto(QDialog):
             "pdk": self.pdk.currentData(),
             "frequencia_mhz": float(self.frequencia.value()),
         }
+
+
+_MODULO = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+LINGUAGENS_NOVO = (("SystemVerilog  (.sv)", ".sv"), ("Verilog  (.v)", ".v"))
+
+
+def _pasta_dos_padroes(padroes: list[str], padrao: str) -> str:
+    """'rtl/**/*.v' → 'rtl'. Sem padrão com pasta fixa, usa o nome de costume."""
+    for p in padroes:
+        primeira = p.split("/")[0]
+        if "/" in p and not any(c in primeira for c in "*?["):
+            return primeira
+    return padrao
+
+
+class DialogoNovoArquivo(QDialog):
+    """Nome do módulo, linguagem, papel (circuito ou testbench) e pasta — com o caminho final à
+    vista e validação ao digitar."""
+
+    def __init__(self, projeto, pai: QWidget | None = None) -> None:
+        super().__init__(pai)
+        self.projeto = projeto
+        self.setWindowTitle("Novo arquivo")
+        self.setMinimumWidth(520)
+        self._pasta_editada = False
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(Espaco.XL, Espaco.XL, Espaco.XL, Espaco.L)
+        lay.setSpacing(Espaco.M)
+        lay.addWidget(rotulo("Novo arquivo", Papel.ROTULO, "3"))
+        lay.addWidget(
+            rotulo(f"Um {t.serifa('módulo', tamanho_px=30)} novo", Papel.TITULO, rico=True)
+        )
+        explicacao = rotulo(
+            "Cada arquivo guarda um módulo, com o mesmo nome do arquivo. O esqueleto já vem com "
+            "relógio, reset e um registrador — troque pelo seu circuito.",
+            Papel.PEQUENO,
+            "2",
+        )
+        explicacao.setWordWrap(True)
+        lay.addWidget(explicacao)
+
+        campos = QGridLayout()
+        campos.setHorizontalSpacing(Espaco.M)
+        campos.setVerticalSpacing(6)
+        campos.addWidget(rotulo("Nome do módulo", Papel.ROTULO, "3"), 0, 0)
+        campos.addWidget(rotulo("Linguagem", Papel.ROTULO, "3"), 0, 1)
+        self.nome = QLineEdit("")
+        self.nome.setPlaceholderText("somador")
+        self.nome.setFont(t.fonte(Papel.MONO))
+        self.nome.textChanged.connect(self._validar)
+        campos.addWidget(self.nome, 1, 0)
+        self.linguagem = QComboBox()
+        self.linguagem.setFont(t.fonte(Papel.CORPO))
+        for rotulo_, ext in LINGUAGENS_NOVO:
+            self.linguagem.addItem(rotulo_, ext)
+        self.linguagem.currentIndexChanged.connect(self._validar)
+        campos.addWidget(self.linguagem, 1, 1)
+        campos.addWidget(rotulo("Papel", Papel.ROTULO, "3"), 2, 0)
+        campos.addWidget(rotulo("Pasta", Papel.ROTULO, "3"), 2, 1)
+        self.tipo = QComboBox()
+        self.tipo.setFont(t.fonte(Papel.CORPO))
+        self.tipo.addItem("Módulo — o circuito", "modulo")
+        self.tipo.addItem("Testbench — simulação", "testbench")
+        self.tipo.currentIndexChanged.connect(self._tipo_mudou)
+        campos.addWidget(self.tipo, 3, 0)
+        self.pasta = QLineEdit(self._pasta_padrao())
+        self.pasta.setFont(t.fonte(Papel.MONO))
+        self.pasta.textEdited.connect(self._pasta_mudou)
+        campos.addWidget(self.pasta, 3, 1)
+        campos.setColumnStretch(0, 1)
+        campos.setColumnStretch(1, 1)
+        lay.addLayout(campos)
+
+        self.previa = rotulo("", Papel.MONO, "2")
+        lay.addWidget(self.previa)
+        self.aviso = rotulo("", Papel.PEQUENO, "falha")
+        self.aviso.setWordWrap(True)
+        lay.addWidget(self.aviso)
+        acoes = QHBoxLayout()
+        acoes.addStretch(1)
+        cancelar = botao("Cancelar", "fantasma")
+        cancelar.clicked.connect(self.reject)
+        self.criar = botao("Criar arquivo", "primario")
+        self.criar.setDefault(True)
+        self.criar.clicked.connect(self.accept)
+        acoes.addWidget(cancelar)
+        acoes.addWidget(self.criar)
+        lay.addLayout(acoes)
+        self._validar()
+
+    def _pasta_padrao(self) -> str:
+        fontes = self.projeto.fontes
+        if self.tipo.currentData() == "testbench":
+            return _pasta_dos_padroes(fontes.testbenches, "tb")
+        return _pasta_dos_padroes(fontes.rtl, "rtl")
+
+    def _tipo_mudou(self) -> None:
+        if not self._pasta_editada:
+            self.pasta.setText(self._pasta_padrao())
+        self._validar()
+
+    def _pasta_mudou(self) -> None:
+        self._pasta_editada = True
+        self._validar()
+
+    @property
+    def relativo(self) -> str:
+        pasta = self.pasta.text().strip().strip("/")
+        nome = self.nome.text().strip() + (self.linguagem.currentData() or ".sv")
+        return f"{pasta}/{nome}" if pasta else nome
+
+    def _validar(self) -> None:
+        nome = self.nome.text().strip()
+        problema = ""
+        if nome and not _MODULO.match(nome):
+            problema = "Use letras, números e _, começando por letra (é o nome do módulo)."
+        elif ".." in Path(self.pasta.text().strip()).parts:
+            problema = "A pasta precisa ficar dentro do projeto."
+        elif nome and (self.projeto.raiz / self.relativo).exists():
+            problema = f"{self.relativo} já existe."
+        self.previa.setText(f"→ {self.relativo}" if nome else "")
+        self.aviso.setText(problema)
+        self.nome.setProperty("erro", "sim" if problema else "nao")
+        repolir(self.nome)
+        self.criar.setEnabled(bool(nome) and not problema)
+
+    def escolhas(self) -> dict:
+        return {"relativo": self.relativo, "tipo": self.tipo.currentData()}

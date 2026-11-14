@@ -1,12 +1,20 @@
 // Semáforo em SystemVerilog: enum para os estados, always_ff e always_comb.
 module semaforo #(
-    parameter int T_VERDE = 20, T_AMARELO = 5, T_VERMELHO = 15
+    parameter int T_VERDE    = 20,
+    parameter int T_AMARELO  = 5,
+    parameter int T_VERMELHO = 15
 ) (
     input  logic clk,
     input  logic rst_n,
-    output logic verde, amarelo, vermelho
+    output logic verde,
+    output logic amarelo,
+    output logic vermelho
 );
-    typedef enum logic [1:0] {VERDE, AMARELO, VERMELHO} estado_t;
+    typedef enum logic [1:0] {
+        VERDE,
+        AMARELO,
+        VERMELHO
+    } estado_t;
     estado_t estado, proximo;
     logic [4:0] tempo;
     logic fim;
@@ -19,9 +27,9 @@ module semaforo #(
             default:  fim = 1'b1;
         endcase
         unique case (estado)
-            VERDE:    proximo = AMARELO;
-            AMARELO:  proximo = VERMELHO;
-            default:  proximo = VERDE;
+            VERDE:   proximo = AMARELO;
+            AMARELO: proximo = VERMELHO;
+            default: proximo = VERDE;
         endcase
     end
 
