@@ -68,7 +68,8 @@ class _LinhaFerramenta(QFrame):
         nome.addWidget(rotulo(f.nome, Papel.CORPO_FORTE))
         nome.addWidget(rotulo(f.ferramenta.descricao, Papel.PEQUENO, "2"))
         lay.addLayout(nome, 0, 0)
-        lay.addWidget(rotulo(_ORIGEM[f.ferramenta.origem], Papel.ETIQUETA, "2"), 0, 1)
+        origem = _ORIGEM[f.ferramenta.origem] + (" · flatpak" if f.via == "flatpak" else "")
+        lay.addWidget(rotulo(origem, Papel.ETIQUETA, "2"), 0, 1)
         lay.addWidget(rotulo(f.encontrada or "—", Papel.MONO), 0, 2)
         esperada = f.ferramenta.versao
         if f.ferramenta.comparacao is Comparacao.MINIMA:

@@ -59,6 +59,9 @@ class Ferramenta(_Modelo):
     expressao: str
     pacote: str | None = Field(default=None, description="Nome do pacote na distribuição.")
     instrucao: str | None = Field(default=None, description="Como instalar, quando não há pacote.")
+    flatpak: str | None = Field(
+        default=None, description="ID no Flathub; usado quando a ferramenta não está no PATH."
+    )
 
     @field_validator("expressao")
     @classmethod

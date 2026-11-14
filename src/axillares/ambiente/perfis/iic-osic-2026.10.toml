@@ -96,7 +96,9 @@ comparacao = "minima"
 essencial = false
 comando = ["klayout", "-v"]
 expressao = 'KLayout (\d+\.\d+(?:\.\d+)?)'
-pacote = "klayout"
+# Fedora 44 não empacota o KLayout (verificado em 2026-11-14); o Flathub tem, para qualquer
+# distribuição e sem sudo. Saída real de `flatpak run … -v` em tests/fixtures/flatpak/.
+flatpak = "de.klayout.KLayout"
 
 [[ferramentas]]
 nome = "surfer"
@@ -107,4 +109,5 @@ comparacao = "minima"
 essencial = false
 comando = ["surfer", "--version"]
 expressao = 'surfer (\d+\.\d+\.\d+)'
+# O Surfer não está no Flathub (verificado em 2026-11-14).
 instrucao = "Baixe o binário para Linux em https://surfer-project.org e coloque-o numa pasta do PATH (por exemplo ~/.local/bin)."

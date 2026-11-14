@@ -205,8 +205,17 @@ def ferramenta_nativa_ausente(
     pacote: str | None,
     instrucao: str | None,
     os_release: Path = Path("/etc/os-release"),
+    flatpak: str | None = None,
+    tem_flatpak: bool = True,
 ) -> Diagnostico:
-    if instrucao:
+    if flatpak:
+        passo = f"Instale pelo Flathub, sem sudo: flatpak install --user flathub {flatpak}"
+        if not tem_flatpak:
+            passo = (
+                f"Instale o Flatpak ({comando_de_instalacao('flatpak', os_release)}), "
+                f"adicione o Flathub e depois: flatpak install --user flathub {flatpak}"
+            )
+    elif instrucao:
         passo = instrucao
     elif pacote:
         passo = f"Instale com: {comando_de_instalacao(pacote, os_release)}"

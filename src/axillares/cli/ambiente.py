@@ -79,7 +79,7 @@ def tabela(relatorio: RelatorioAmbiente) -> Table:
         nome = f.nome if f.ferramenta.essencial else f"{f.nome} [dim](opcional)[/]"
         t.add_row(
             nome,
-            _ROTULO_ORIGEM[f.ferramenta.origem],
+            (_ROTULO_ORIGEM[f.ferramenta.origem] + (" · flatpak" if f.via == "flatpak" else "")),
             f.encontrada or "—",
             esperada,
             f"[{cor}]{rotulo}[/]",

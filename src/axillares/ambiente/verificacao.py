@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 
 from axillares.ambiente import conteiner as ct
 from axillares.ambiente import diagnostico as dg
 from axillares.ambiente.executor import Executor, Resultado
+from axillares.ambiente.nativas import executar_versao, tem_flatpak
 from axillares.ambiente.perfil import Comparacao, Ferramenta, Origem, Perfil, comparar_versoes
 
 
@@ -26,6 +27,8 @@ class FerramentaAvaliada:
     veredito: Veredito
     encontrada: str | None = None
     diagnostico: dg.Diagnostico | None = None
+    via: str = ""
+    """Para nativas: "PATH" ou "flatpak"."""
 
     @property
     def nome(self) -> str:
@@ -67,7 +70,10 @@ class RelatorioAmbiente:
 
 
 def avaliar_ferramenta(
-    ferramenta: Ferramenta, resultado: Resultado, os_release: Path = Path("/etc/os-release")
+    ferramenta: Ferramenta,
+    resultado: Resultado,
+    os_release: Path = Path("/etc/os-release"),
+    flatpak_existe: bool = True,
 ) -> FerramentaAvaliada:
     if resultado.nao_encontrado:
         if ferramenta.origem is Origem.NATIVA:
@@ -77,6 +83,8 @@ def avaliar_ferramenta(
                 ferramenta.pacote,
                 ferramenta.instrucao,
                 os_release,
+                ferramenta.flatpak,
+                flatpak_existe,
             )
         else:
             diag = dg.ferramenta_ausente_na_imagem(ferramenta.nome, resultado.saida)
@@ -124,10 +132,12 @@ def avaliar_ambiente(
                 FerramentaAvaliada(f, Veredito.SEM_IMAGEM) for f in do_conteiner
             ]
 
-    for f in perfil.da_origem(Origem.NATIVA):
-        relatorio.ferramentas.append(
-            avaliar_ferramenta(f, executor.executar(f.comando, tempo_limite=20), os_release)
-        )
+    nativas = perfil.da_origem(Origem.NATIVA)
+    flatpak_existe = nativas and tem_flatpak(executor)
+    for f in nativas:
+        resultado, via = executar_versao(f, executor)
+        avaliada = avaliar_ferramenta(f, resultado, os_release, bool(flatpak_existe))
+        relatorio.ferramentas.append(replace(avaliada, via=via))
     return relatorio
 
 
