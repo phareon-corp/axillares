@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "axillares"
+version = "0.1.0"
+description = "Ambiente integrado de desktop para projeto de circuitos integrados com ferramentas abertas, do Verilog ao GDSII."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+authors = [{ name = "Projeto Axillares" }]
+keywords = ["eda", "asic", "fpga", "verilog", "gdsii", "siliconcompiler"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "Natural Language :: Portuguese (Brazilian)",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+]
+dependencies = [
+    "typer>=0.12,<1",
+    "pydantic>=2.7,<3",
+    "jinja2>=3.1,<4",
+    "tomli-w>=1.0,<2",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+gui = ["pyside6>=6.7,<7"]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+axil = "axillares.cli.principal:app"
+
+[project.urls]
+Repositorio = "https://github.com/phareon-corp/axillares"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/axillares"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+# RUF001-003: caracteres ambíguos — o código é em português e usa "–", "·" e aspas tipográficas de propósito.
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not ferramentas' --strict-markers"
+markers = [
+    "ferramentas: exige ferramentas de EDA reais instaladas (desligado por padrão; rode com -m ferramentas)",
+    "gui: exige PySide6 instalado",
+]
