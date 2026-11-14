@@ -1,0 +1,21 @@
+# Projeto Axillares — {{ nome }}
+# Documentação: https://github.com/phareon-corp/axillares
+
+[projeto]
+nome = "{{ nome }}"
+topo = "contador"
+descricao = "Contador síncrono de 8 bits com habilitação — o projeto de exemplo do Axillares."
+
+[fontes]
+rtl = ["rtl/**/*.v", "rtl/**/*.sv"]
+testbenches = ["tb/**/*.v"]
+sdc = "restricoes/contador.sdc"
+
+[asic]
+pdk = "skywater130"          # skywater130 · gf180 · ihp130
+frequencia_mhz = 100         # usada para gerar o SDC quando fontes.sdc não é informado
+relogio = "clk"
+
+[motores]
+sintese = "siliconcompiler"
+gds = "siliconcompiler"

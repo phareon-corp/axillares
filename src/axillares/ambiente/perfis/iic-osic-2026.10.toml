@@ -17,6 +17,15 @@ camadas = 62
 tamanho_gb = 4.0
 caminhos = ["/foss/tools/bin", "/foss/tools/klayout"]
 
+# Motores (orquestradores) que vêm dentro da imagem. A versão é travada pelo digest; estes
+# números são conferidos contra o que o motor registra em cada execução.
+[motores]
+siliconcompiler = "0.38.10"
+edalize = "0.6.8"
+fusesoc = "2.4.7"
+librelane = "3.1.0.dev3"
+cocotb = "2.1.0"
+
 # --- Dentro do contêiner -------------------------------------------------------------------
 
 [[ferramentas]]

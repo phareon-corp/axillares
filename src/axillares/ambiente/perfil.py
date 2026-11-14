@@ -81,6 +81,9 @@ class Perfil(_Modelo):
     versao: str
     descricao: str
     imagem: Imagem
+    motores: dict[str, str] = Field(
+        default_factory=dict, description="Versões dos orquestradores dentro da imagem."
+    )
     ferramentas: list[Ferramenta] = Field(min_length=1)
 
     @property

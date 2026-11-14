@@ -60,3 +60,6 @@ markers = [
     "ferramentas: exige ferramentas de EDA reais instaladas (desligado por padrão; rode com -m ferramentas)",
     "gui: exige PySide6 instalado",
 ]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Argument", "typer.Option"]

@@ -1,20 +1,22 @@
 """Execução de processos externos.
 
-É a única porta do subsistema `ambiente` para o mundo: tudo o que roda uma ferramenta passa por
-um `Executor`. Nos testes, `ExecutorFalso` devolve saídas gravadas e nenhuma ferramenta real é
-necessária.
+É a única porta do Axillares para processos de terceiros: tudo o que roda uma ferramenta ou um
+motor passa por um `Executor`. Nos testes, `ExecutorFalso` devolve saídas gravadas e nenhuma
+ferramenta real é necessária.
 """
 
 from __future__ import annotations
 
 import os
 import subprocess
+import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
 CODIGO_NAO_ENCONTRADO = 127
 CODIGO_TEMPO_ESGOTADO = 124
+CODIGO_CANCELADO = -15
 
 
 @dataclass(frozen=True)
@@ -40,7 +42,10 @@ class Executor(Protocol):
     def executar(self, comando: Sequence[str], *, tempo_limite: float = 60) -> Resultado: ...
 
     def transmitir(
-        self, comando: Sequence[str], ao_receber: Callable[[str], None]
+        self,
+        comando: Sequence[str],
+        ao_receber: Callable[[str], None],
+        cancelar: threading.Event | None = None,
     ) -> Resultado: ...
 
 
@@ -73,7 +78,14 @@ class ExecutorReal:
             return Resultado(CODIGO_TEMPO_ESGOTADO, parcial)
         return Resultado(processo.returncode, processo.stdout)
 
-    def transmitir(self, comando: Sequence[str], ao_receber: Callable[[str], None]) -> Resultado:
+    def transmitir(
+        self,
+        comando: Sequence[str],
+        ao_receber: Callable[[str], None],
+        cancelar: threading.Event | None = None,
+    ) -> Resultado:
+        """Executa transmitindo cada linha. Se `cancelar` for acionado, encerra o processo
+        (SIGTERM e, depois de 5 s, SIGKILL) e devolve o que foi lido até ali."""
         linhas: list[str] = []
         try:
             processo = subprocess.Popen(
@@ -89,12 +101,32 @@ class ExecutorReal:
             )
         except FileNotFoundError:
             return Resultado(CODIGO_NAO_ENCONTRADO, f"{comando[0]}: comando não encontrado")
+
+        terminou = threading.Event()
+        if cancelar is not None:
+
+            def vigiar() -> None:
+                while not terminou.wait(0.2):
+                    if cancelar.is_set():
+                        processo.terminate()
+                        try:
+                            processo.wait(5)
+                        except subprocess.TimeoutExpired:
+                            processo.kill()
+                        return
+
+            threading.Thread(target=vigiar, daemon=True, name="axil-vigia").start()
+
         assert processo.stdout is not None
-        for linha in processo.stdout:
-            linha = linha.rstrip("\n")
-            linhas.append(linha)
-            ao_receber(linha)
-        return Resultado(processo.wait(), "\n".join(linhas))
+        try:
+            for linha in processo.stdout:
+                linha = linha.rstrip("\n")
+                linhas.append(linha)
+                ao_receber(linha)
+        finally:
+            codigo = processo.wait()
+            terminou.set()
+        return Resultado(codigo, "\n".join(linhas))
 
 
 Casador = tuple[str, ...] | Callable[[Sequence[str]], bool]
@@ -127,8 +159,15 @@ class ExecutorFalso:
     def executar(self, comando: Sequence[str], *, tempo_limite: float = 60) -> Resultado:
         return self._procurar(comando)
 
-    def transmitir(self, comando: Sequence[str], ao_receber: Callable[[str], None]) -> Resultado:
+    def transmitir(
+        self,
+        comando: Sequence[str],
+        ao_receber: Callable[[str], None],
+        cancelar: threading.Event | None = None,
+    ) -> Resultado:
         resultado = self._procurar(comando)
         for linha in resultado.saida.splitlines():
+            if cancelar is not None and cancelar.is_set():
+                return Resultado(CODIGO_CANCELADO, resultado.saida)
             ao_receber(linha)
         return resultado

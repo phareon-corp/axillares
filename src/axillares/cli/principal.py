@@ -8,7 +8,7 @@ import typer
 from rich.console import Console
 
 from axillares import __version__
-from axillares.cli import ambiente
+from axillares.cli import ambiente, projeto
 
 app = typer.Typer(
     name="axil",
@@ -19,6 +19,10 @@ app = typer.Typer(
 )
 console = Console()
 app.add_typer(ambiente.app, name="ambiente")
+app.command("novo")(projeto.novo)
+app.command("executar")(projeto.executar)
+app.command("runs")(projeto.runs)
+app.command("comparar")(projeto.comparar_cmd)
 
 
 @app.callback()
