@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src file: qrc: 'unsafe-eval'; style-src file: 'unsafe-inline'; font-src file: data:; worker-src file: blob: data:; img-src file: data:">
+<title>editor</title>
+<link rel="stylesheet" href="pagina.css">
+</head>
+<body>
+<div id="vazio">
+  <div class="sinal"></div>
+  <p class="eyebrow">EDITOR</p>
+  <p class="frase">Escolha um arquivo à esquerda.</p>
+  <p class="dica">Ctrl+S salva · Ctrl+Enter executa a síntese · F1 abre a paleta de comandos</p>
+</div>
+<div id="editor"></div>
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script src="monaco/vs/loader.js"></script>
+<script src="editor.js"></script>
+</body>
+</html>

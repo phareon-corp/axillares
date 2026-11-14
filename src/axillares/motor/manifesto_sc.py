@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from axillares.core.modelos import Falha, Metrica, Situacao
+from axillares.core.modelos import Falha, Local, Metrica, Situacao
 
 
 @dataclass(frozen=True)
@@ -205,6 +205,31 @@ def mensagens_de_erro(log_do_no: str, raiz_no_conteiner: str = "/projeto/") -> l
     return mensagens
 
 
+# formato do slang (elaboração no SiliconCompiler 0.38): arquivo:linha:coluna: error: mensagem
+_LOCAL = re.compile(
+    r"^(?P<arquivo>[^\s:][^:]*):(?P<linha>\d+):(?P<coluna>\d+):\s*"
+    r"(?P<gravidade>error|warning|fatal error):\s*(?P<mensagem>.+)$"
+)
+
+
+def locais_das_mensagens(mensagens: list[str], origem: str = "") -> list[Local]:
+    locais = []
+    for m in mensagens:
+        achado = _LOCAL.match(m.strip())
+        if achado:
+            locais.append(
+                Local(
+                    arquivo=achado["arquivo"],
+                    linha=int(achado["linha"]),
+                    coluna=int(achado["coluna"]),
+                    mensagem=achado["mensagem"].strip(),
+                    gravidade="aviso" if achado["gravidade"] == "warning" else "erro",
+                    origem=origem,
+                )
+            )
+    return locais
+
+
 def explicar_falha(
     manifesto: dict[str, Any], log_do_no: str = "", raiz_no_conteiner: str = "/projeto/"
 ) -> Falha:
@@ -222,6 +247,7 @@ def explicar_falha(
         resumo=f"A etapa de {rotulo} falhou.",
         passo=passo,
         mensagens=mensagens[:12],
+        locais=locais_das_mensagens(mensagens, f"siliconcompiler · {passo}"),
         proximo_passo=PROXIMOS_PASSOS.get(
             familia, "Veja as mensagens acima; o log completo está em log.txt na execução."
         ),

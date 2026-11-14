@@ -292,8 +292,6 @@ class TelaProjeto(QWidget):
     def __init__(self, sessao: Sessao) -> None:
         super().__init__()
         self.sessao = sessao
-        self._tarefa: tarefas.Tarefa | None = None
-        self._motor = None
         self._ultimo: RegistroExecucao | None = None
 
         externo = QVBoxLayout(self)
@@ -304,6 +302,9 @@ class TelaProjeto(QWidget):
         self.pilha.addWidget(tela_rolavel(self._montar_projeto()))
         sessao.projeto_mudou.connect(self.mostrar)
         sessao.execucoes_mudaram.connect(self._atualizar_ultimas)
+        sessao.execucao_iniciada.connect(self._iniciada)
+        sessao.execucao_linha.connect(self.painel.receber)
+        sessao.execucao_concluida.connect(self._concluida)
 
     # --- montagem -----------------------------------------------------------------------------
 
@@ -414,29 +415,17 @@ class TelaProjeto(QWidget):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.sessao.projeto.raiz)))
 
     def executar(self, etapa: Etapa) -> None:
-        projeto = self.sessao.projeto
-        if projeto is None or (self._tarefa and self._tarefa.rodando):
-            return
-        nome_motor = projeto.motores.para(etapa)
-        try:
-            self._motor = self.sessao.fabrica_motor(nome_motor)
-        except Exception as erro:  # ErroMotor: mensagem pronta
-            self.sessao.erro.emit(str(erro))
-            return
+        self.sessao.executar(etapa)
+
+    def _iniciada(self, etapa: Etapa, nome_motor: str) -> None:
         for c in self.cartoes.values():
             c.botao.setEnabled(False)
         self.secao_execucao.show()
         self.painel.comecar(etapa, nome_motor)
-        self._tarefa = tarefas.executar(projeto, etapa, self._motor, self)
-        motor = self._motor
-        self._tarefa.linha.connect(lambda x: self.painel.receber(x, motor.descrever_progresso(x)))
-        self._tarefa.concluido.connect(self._concluida)
-        self._tarefa.falhou.connect(self.sessao.erro)
-        self._tarefa.iniciar()
 
     def cancelar(self) -> None:
-        if self._tarefa and self._tarefa.rodando:
-            self._tarefa.cancelar.set()
+        if self.sessao.executando:
+            self.sessao.cancelar()
             self.painel.cancelar.setEnabled(False)
             self.painel.passo.setText("Interrompendo…")
 
@@ -445,16 +434,10 @@ class TelaProjeto(QWidget):
         for c in self.cartoes.values():
             c.botao.setEnabled(True)
         self.painel.terminar(registro)
-        self.sessao.execucoes_mudaram.emit()
 
     @property
     def executando(self) -> bool:
-        return bool(self._tarefa and self._tarefa.rodando)
-
-    def encerrar(self) -> None:
-        if self.executando:
-            self._tarefa.cancelar.set()
-            self._tarefa.esperar(30_000)
+        return self.sessao.executando
 
     # --- apresentação -------------------------------------------------------------------------
 

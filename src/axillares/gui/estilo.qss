@@ -129,3 +129,36 @@ QFrame[tipo="painel-execucao"] {
 }
 QFrame[tipo="cartao-etapa"] { background: ${fundo}; }
 QFrame[tipo="cartao-etapa"]:hover { background: ${fundo_3}; }
+
+/* ---- editor ----------------------------------------------------------------------------- */
+QFrame[tipo="lateral-editor"] { background: ${fundo}; border-right: 1px solid ${linha}; }
+QTreeWidget { background: transparent; border: none; outline: none; padding: 4px 6px; }
+QTreeWidget::item { padding: 5px 6px; border-radius: ${raio_s}px; }
+QTreeWidget::item:hover { background: ${fundo_2}; }
+QTreeWidget::item:selected { background: ${fundo_3}; color: ${tinta}; }
+QTreeWidget::branch { background: transparent; image: none; border: none; }
+QSplitter::handle { background: ${linha}; }
+
+QFrame[tipo="barra-abas"] { background: ${fundo}; border-bottom: 1px solid ${linha}; }
+QFrame[tipo="aba"] { background: transparent; border-right: 1px solid ${linha}; border-top: 2px solid transparent; }
+QFrame[tipo="aba"]:hover { background: ${fundo_2}; }
+QFrame[tipo="aba"][ativa="sim"] { background: ${fundo_2}; border-top: 2px solid ${acento}; }
+QPushButton[tipo="fechar-aba"] {
+    background: transparent; border: none; color: ${tinta_3}; border-radius: 10px; font-size: 15px;
+    padding: 0;
+}
+QPushButton[tipo="fechar-aba"]:hover { background: ${fundo_3}; color: ${tinta}; }
+
+QPushButton[tipo="compacto"], QPushButton[tipo="compacto-primario"] {
+    border-radius: 14px; padding: 5px 14px; min-height: 16px;
+}
+QPushButton[tipo="compacto"] { background: transparent; color: ${tinta}; border: 1px solid ${linha_forte}; }
+QPushButton[tipo="compacto"]:hover { background: ${tinta}; color: ${fundo}; border-color: ${tinta}; }
+QPushButton[tipo="compacto-primario"] { background: ${acento}; color: ${sobre_acento}; border: 1px solid ${acento}; }
+QPushButton[tipo="compacto-primario"]:hover { background: ${acento_brilho}; border-color: ${acento_brilho}; }
+QPushButton[tipo="compacto"]:disabled, QPushButton[tipo="compacto-primario"]:disabled {
+    background: transparent; color: ${tinta_3}; border-color: ${linha};
+}
+
+QFrame[tipo="barra-estado"] { background: ${fundo}; border-top: 1px solid ${linha}; }
+QFrame[tipo="painel-problemas"] { background: ${fundo}; border-top: 1px solid ${linha_forte}; }

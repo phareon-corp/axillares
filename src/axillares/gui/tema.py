@@ -317,3 +317,147 @@ def tema() -> Tema:
 
 def paleta() -> Paleta:
     return tema().paleta
+
+
+# --- Editor de código (Monaco) ----------------------------------------------------------------
+# A paleta de código é contida, como manda a Phareon: o texto é tinta; palavras-chave ganham peso
+# (negrito), não cor; a cor fica para o que é dado (números) e para o que fala com a ferramenta
+# (diretivas `timescale, tarefas $display). O laranja é o cursor — o ponto ativo, a fonte.
+
+
+@dataclass(frozen=True)
+class PaletaCodigo:
+    palavra_chave: str
+    tipo: str
+    numero: str
+    texto: str
+    comentario: str
+    sistema: str
+    diretiva: str
+    delimitador: str
+
+
+CODIGO_ESCURO = PaletaCodigo(
+    palavra_chave="#F4F1E9",
+    tipo="#CDBFAE",
+    numero="#FFAA1C",
+    texto="#B9D98C",
+    comentario="#6E6A60",
+    sistema="#8DB4FF",
+    diretiva="#C59BFF",
+    delimitador="#8C877D",
+)
+CODIGO_CLARO = PaletaCodigo(
+    palavra_chave="#0A0A0D",
+    tipo="#5A4A38",
+    numero="#A35400",
+    texto="#3B6B16",
+    comentario="#8A857A",
+    sistema="#2C5AA8",
+    diretiva="#7A3BB0",
+    delimitador="#6F6B5F",
+)
+
+
+def _hex(valor: str) -> str:
+    """#RRGGBB ou rgba(r, g, b, a) → #RRGGBBAA, o formato que o Monaco aceita."""
+    c = _qcolor(valor)
+    return f"#{c.red():02X}{c.green():02X}{c.blue():02X}{c.alpha():02X}"
+
+
+def _rgba_css(cor: str, alfa: float) -> str:
+    c = _qcolor(cor)
+    return f"rgba({c.red()}, {c.green()}, {c.blue()}, {alfa})"
+
+
+def tema_editor(p: Paleta) -> dict:
+    """Tema do Monaco e variáveis CSS da página do editor, derivados da paleta corrente."""
+    c = CODIGO_ESCURO if p.escura else CODIGO_CLARO
+    sem = lambda cor: cor.lstrip("#")[:6]  # noqa: E731 - regras de token não aceitam alfa
+    regras = [
+        {"token": "", "foreground": sem(p.tinta)},
+        {"token": "keyword", "foreground": sem(c.palavra_chave), "fontStyle": "bold"},
+        {"token": "keyword.flow", "foreground": sem(c.palavra_chave), "fontStyle": "bold"},
+        {"token": "type", "foreground": sem(c.tipo)},
+        {"token": "typedef", "foreground": sem(c.tipo)},
+        {"token": "number", "foreground": sem(c.numero)},
+        {"token": "string", "foreground": sem(c.texto)},
+        {"token": "string.include.identifier", "foreground": sem(c.diretiva)},
+        {"token": "comment", "foreground": sem(c.comentario), "fontStyle": "italic"},
+        {"token": "variable.predefined", "foreground": sem(c.sistema)},
+        {"token": "variable", "foreground": sem(c.sistema)},
+        {"token": "annotation", "foreground": sem(c.diretiva)},
+        {"token": "delimiter", "foreground": sem(c.delimitador)},
+        {"token": "operator", "foreground": sem(c.delimitador)},
+        {"token": "identifier", "foreground": sem(p.tinta)},
+        {"token": "type.identifier", "foreground": sem(c.tipo)},
+    ]
+    cores = {
+        "editor.background": _hex(p.fundo),
+        "editor.foreground": _hex(p.tinta),
+        "editorCursor.foreground": _hex(p.acento),
+        "editor.lineHighlightBackground": _hex(p.fundo_2),
+        "editor.lineHighlightBorder": _hex(p.fundo_2),
+        "editor.selectionBackground": _hex("rgba(255, 74, 28, 56)"),
+        "editor.inactiveSelectionBackground": _hex("rgba(255, 74, 28, 28)"),
+        "editor.selectionHighlightBackground": _hex("rgba(255, 74, 28, 22)"),
+        "editor.wordHighlightBackground": _hex(p.linha_media),
+        "editor.findMatchBackground": _hex("rgba(255, 74, 28, 90)"),
+        "editor.findMatchHighlightBackground": _hex("rgba(255, 74, 28, 40)"),
+        "editorLineNumber.foreground": _hex(p.tinta_3),
+        "editorLineNumber.activeForeground": _hex(p.acento),
+        "editorIndentGuide.background1": _hex(p.linha),
+        "editorIndentGuide.activeBackground1": _hex(p.linha_forte),
+        "editorWhitespace.foreground": _hex(p.linha_forte),
+        "editorBracketMatch.background": _hex(p.linha_media),
+        "editorBracketMatch.border": _hex(p.linha_forte),
+        "editorGutter.background": _hex(p.fundo),
+        "editorError.foreground": _hex(p.falha),
+        "editorWarning.foreground": _hex(p.aviso),
+        "editorOverviewRuler.errorForeground": _hex(p.falha),
+        "editorOverviewRuler.warningForeground": _hex(p.aviso),
+        "editorStickyScroll.background": _hex(p.fundo),
+        "editorStickyScrollHover.background": _hex(p.fundo_2),
+        "editorWidget.background": _hex(p.fundo_3),
+        "editorWidget.border": _hex(p.linha_forte),
+        "editorHoverWidget.background": _hex(p.fundo_3),
+        "editorHoverWidget.border": _hex(p.linha_forte),
+        "editorSuggestWidget.background": _hex(p.fundo_3),
+        "editorSuggestWidget.selectedBackground": _hex(p.fundo_2),
+        "input.background": _hex(p.fundo_2),
+        "input.border": _hex(p.linha_forte),
+        "focusBorder": _hex(p.acento),
+        "quickInput.background": _hex(p.fundo_3),
+        "list.activeSelectionBackground": _hex(p.fundo_2),
+        "list.hoverBackground": _hex(p.fundo_2),
+        "minimap.background": _hex(p.fundo),
+        "minimapSlider.background": _hex(p.linha),
+        "minimapSlider.hoverBackground": _hex(p.linha_media),
+        "scrollbarSlider.background": _hex(p.linha_media),
+        "scrollbarSlider.hoverBackground": _hex(p.linha_forte),
+        "scrollbarSlider.activeBackground": _hex(p.tinta_3),
+        "editorBracketHighlight.foreground1": _hex(p.tinta_2),
+        "editorBracketHighlight.foreground2": _hex(c.tipo),
+        "editorBracketHighlight.foreground3": _hex(c.delimitador),
+    }
+    css = {
+        "--fundo": p.fundo,
+        "--tinta": p.tinta,
+        "--tinta-2": p.tinta_2,
+        "--tinta-3": p.tinta_3,
+        "--acento": p.acento,
+        "--acento-suave": p.acento_suave.replace(", 31)", ", .35)"),
+        "--falha": p.falha,
+        "--aviso": p.aviso,
+        "--falha-suave": _rgba_css(p.falha, 0.13 if p.escura else 0.10),
+        "--aviso-suave": _rgba_css(p.aviso, 0.10),
+    }
+    return {
+        "monaco": {
+            "base": "vs-dark" if p.escura else "vs",
+            "inherit": True,
+            "rules": regras,
+            "colors": cores,
+        },
+        "css": css,
+    }

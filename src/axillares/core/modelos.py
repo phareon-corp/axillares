@@ -62,6 +62,17 @@ class Artefato(_Modelo):
     bytes: int = 0
 
 
+class Local(_Modelo):
+    """Um ponto no código-fonte apontado pelo motor ou pelo lint."""
+
+    arquivo: str = Field(description="Relativo à raiz do projeto.")
+    linha: int = Field(ge=1)
+    coluna: int = Field(default=1, ge=1)
+    mensagem: str
+    gravidade: str = Field(default="erro", pattern="^(erro|aviso)$")
+    origem: str = ""
+
+
 class Falha(_Modelo):
     """Por que uma execução falhou, já em linguagem de gente."""
 
@@ -69,6 +80,7 @@ class Falha(_Modelo):
     passo: str = Field(default="", description="Etapa do motor que falhou.")
     mensagens: list[str] = Field(default_factory=list, description="Linhas de erro do motor.")
     proximo_passo: str = ""
+    locais: list[Local] = Field(default_factory=list, description="Onde no código, se souber.")
 
 
 class ResultadoMotor(_Modelo):

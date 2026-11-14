@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
+    QWidget,
 )
 
 from axillares import __version__
@@ -26,6 +27,7 @@ from axillares.gui.componentes import Ponto, Trama, botao, regua, rotulo
 from axillares.gui.sessao import Sessao
 from axillares.gui.telas.abertura import TelaAbertura
 from axillares.gui.telas.comparar import TelaComparar
+from axillares.gui.telas.editor import TelaEditor
 from axillares.gui.telas.execucoes import TelaExecucoes
 from axillares.gui.telas.projeto import TelaProjeto
 from axillares.gui.tema import Espaco, Modo, Papel
@@ -33,13 +35,14 @@ from axillares.motor import Motor, obter_motor
 
 ICONE = t.PASTA / "icones" / "axillares.svg"
 
-ABERTURA, PROJETO, EXECUCOES, COMPARAR = range(4)
+ABERTURA, PROJETO, EDITOR, EXECUCOES, COMPARAR = range(5)
 # (número, nome, precisa de projeto aberto)
 SECOES = (
     ("01", "Abertura", False),
     ("02", "Projeto", False),
-    ("03", "Execuções", True),
-    ("04", "Comparar", True),
+    ("03", "Editor", True),
+    ("04", "Execuções", True),
+    ("05", "Comparar", True),
 )
 
 
@@ -86,7 +89,7 @@ class Trilho(QFrame):
         self.projeto.setContentsMargins(Espaco.M + 2, 0, Espaco.M, 0)
         self.projeto.setWordWrap(True)
         lay.addWidget(self.projeto)
-        breve = rotulo("05   Trilha · em breve", Papel.ROTULO, "3")
+        breve = rotulo("06   Trilha · em breve", Papel.ROTULO, "3")
         breve.setContentsMargins(Espaco.M + 2, Espaco.M, Espaco.M, 0)
         lay.addWidget(breve)
 
@@ -165,6 +168,7 @@ class JanelaPrincipal(QMainWindow):
         verificar_ao_abrir: bool = True,
         fabrica_motor: Callable[[str], Motor] = obter_motor,
         projeto_inicial: Path | None = None,
+        fabrica_editor: Callable[[], QWidget] | None = None,
     ) -> None:
         super().__init__()
         self.setWindowTitle("Axillares")
@@ -172,6 +176,7 @@ class JanelaPrincipal(QMainWindow):
         self.resize(1320, 860)
         self.setMinimumSize(1040, 680)
         self.sessao = Sessao(fabrica_motor)
+        self._pode_fechar = False
 
         raiz = Trama()
         raiz.setObjectName("raiz")
@@ -191,9 +196,10 @@ class JanelaPrincipal(QMainWindow):
 
         self.abertura = TelaAbertura(perfil or carregar_perfil(), fabrica_executor)
         self.projeto = TelaProjeto(self.sessao)
+        self.editor = TelaEditor(self.sessao, fabrica_editor)
         self.execucoes = TelaExecucoes(self.sessao)
         self.comparar = TelaComparar(self.sessao)
-        for tela in (self.abertura, self.projeto, self.execucoes, self.comparar):
+        for tela in (self.abertura, self.projeto, self.editor, self.execucoes, self.comparar):
             self.pilha.addWidget(tela)
 
         self.trilho.grupo.idClicked.connect(self.ir_para)
@@ -218,6 +224,10 @@ class JanelaPrincipal(QMainWindow):
         if indice == ABERTURA:
             self.abertura.carregar_recentes()
 
+    def abrir_no_editor(self, caminho: Path, linha: int = 0, coluna: int = 1) -> None:
+        self.ir_para(EDITOR)
+        self.editor.abrir(caminho, linha, coluna)
+
     def _projeto_mudou(self, projeto) -> None:
         self.trilho.projeto_aberto(projeto.nome if projeto else None)
         self.setWindowTitle(f"{projeto.nome} — Axillares" if projeto else "Axillares")
@@ -234,7 +244,6 @@ class JanelaPrincipal(QMainWindow):
 
     def closeEvent(self, evento: QCloseEvent) -> None:
         self.abertura.encerrar()
-        self.projeto.encerrar()
         self.sessao.encerrar()
         tarefas.esperar_todas()
         super().closeEvent(evento)
