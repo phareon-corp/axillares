@@ -145,6 +145,8 @@ class Aba(QFrame):
 
 
 class TelaEditor(QWidget):
+    sujos_mudaram = Signal(bool)
+
     def __init__(self, sessao: Sessao, fabrica_editor: Callable[[], QWidget] | None = None) -> None:
         super().__init__()
         self.sessao = sessao
@@ -469,6 +471,7 @@ class TelaEditor(QWidget):
     def _atualizar_abas(self) -> None:
         for caminho, aba in self.abas.items():
             aba.definir(caminho == self.atual, caminho in self.sujos)
+        self.sujos_mudaram.emit(bool(self.sujos))
         self.situacao_arquivo.setText(
             "NÃO SALVO" if self.atual in self.sujos else ("SALVO" if self.atual else "")
         )

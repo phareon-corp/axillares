@@ -27,6 +27,8 @@ from axillares.core.projeto import Projeto
 from axillares.gui import tarefas
 from axillares.gui import tema as t
 from axillares.gui.componentes import (
+    GradeResponsiva,
+    LinhaResponsiva,
     Metrica,
     NumeroSecao,
     Pilula,
@@ -34,7 +36,6 @@ from axillares.gui.componentes import (
     botao,
     cabecalho_tela,
     layout_de_tela,
-    quadro,
     rotulo,
     tela_rolavel,
     tom_da_situacao,
@@ -297,8 +298,10 @@ class TelaProjeto(QWidget):
     def _montar_projeto(self) -> QWidget:
         w = QWidget()
         lay = layout_de_tela(w)
-        topo = QHBoxLayout()
+        linha_topo = LinhaResponsiva(limiar=820)
+        topo = linha_topo.caixa
         cab, self.titulo = cabecalho_tela("Projeto", "")
+        self.titulo.setWordWrap(True)
         self.eyebrow = cab.itemAt(0).widget()
         self.descricao = rotulo("", Papel.LEAD, "2")
         self.descricao.setWordWrap(True)
@@ -311,38 +314,32 @@ class TelaProjeto(QWidget):
         acoes.setSpacing(Espaco.S + 2)
         pasta = botao("Abrir pasta", "fantasma")
         pasta.clicked.connect(self._abrir_no_gerenciador)
-        trocar = botao("Trocar projeto…", "fantasma")
+        trocar = botao("Abrir outro…", "fantasma")
         trocar.clicked.connect(self.abrir_pasta)
         acoes.addWidget(pasta)
         acoes.addWidget(trocar)
+        acoes.addStretch(1)
         lateral.addLayout(acoes)
         topo.addLayout(lateral)
-        lay.addLayout(topo)
+        lay.addWidget(linha_topo)
 
-        grade = quadro("grade")
-        g = QHBoxLayout(grade)
-        g.setContentsMargins(0, 0, 0, 0)
-        g.setSpacing(1)
+        grade = GradeResponsiva(min_coluna=200)
         self.m_topo = Metrica("Módulo de topo")
         self.m_pdk = Metrica("PDK")
         self.m_relogio = Metrica("Relógio alvo")
         self.m_fontes = Metrica("Fontes RTL")
         for m in (self.m_topo, self.m_pdk, self.m_relogio, self.m_fontes):
-            g.addWidget(m, 1)
+            grade.adicionar(m)
         lay.addWidget(grade)
 
         lay.addWidget(NumeroSecao("01", "Etapas", "UMA EXECUÇÃO POR CLIQUE · TUDO VAI PARA runs/"))
-        etapas = QHBoxLayout()
-        etapas.setContentsMargins(0, 0, 0, 0)
-        etapas.setSpacing(1)
-        caixa = quadro("grade")
-        caixa.setLayout(etapas)
+        caixa = GradeResponsiva(min_coluna=340, max_colunas=2)
         self.cartoes = {
             Etapa.SINTESE: CartaoEtapa("01", Etapa.SINTESE, self),
             Etapa.GDS: CartaoEtapa("02", Etapa.GDS, self),
         }
         for c in self.cartoes.values():
-            etapas.addWidget(c, 1)
+            caixa.adicionar(c)
         lay.addWidget(caixa)
 
         lay.addWidget(NumeroSecao("02", "Como funciona", "CLIQUE NUM PASSO PARA DETALHES"))
@@ -378,8 +375,8 @@ class TelaProjeto(QWidget):
     def novo_projeto(self) -> None:
         dialogo = DialogoNovoProjeto(self)
         if dialogo.exec() == QDialog.DialogCode.Accepted:
-            e = dialogo.escolhas()
-            self.sessao.criar(e["nome"], e["destino"], e["modelo"], e["pdk"], e["frequencia_mhz"])
+            # o espaço de trabalho abre o projeto novo numa aba própria
+            self.sessao.pedir_tela.emit("criar-projeto", dialogo.escolhas())
 
     def abrir_pasta(self) -> None:
         inicio = str(self.sessao.projeto.raiz) if self.sessao.projeto else str(Path.home())
@@ -387,7 +384,7 @@ class TelaProjeto(QWidget):
             self, "Abrir projeto (pasta com axil.toml)", inicio
         )
         if pasta:
-            self.sessao.abrir(Path(pasta))
+            self.sessao.pedir_tela.emit("abrir-projeto", Path(pasta))
 
     def _abrir_no_gerenciador(self) -> None:
         if self.sessao.projeto:

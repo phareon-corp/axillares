@@ -27,6 +27,7 @@ from axillares.gui import tarefas
 from axillares.gui import tema as t
 from axillares.gui.componentes import (
     Eyebrow,
+    GradeResponsiva,
     Metrica,
     NumeroSecao,
     Pilula,
@@ -276,16 +277,13 @@ class TelaAbertura(QWidget):
         return hero
 
     def _montar_metricas(self) -> QFrame:
-        grade = quadro("grade")
-        lay = QHBoxLayout(grade)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(1)
+        grade = GradeResponsiva(min_coluna=200)
         self.m_ferramentas = Metrica("Ferramentas conferidas")
         self.m_essenciais = Metrica("Essenciais")
         self.m_imagem = Metrica("Imagem")
         self.m_conteiner = Metrica("Contêiner")
         for m in (self.m_ferramentas, self.m_essenciais, self.m_imagem, self.m_conteiner):
-            lay.addWidget(m, 1)
+            grade.adicionar(m)
         tag = self.perfil.imagem.tag
         self.m_imagem.definir(
             f"{self.perfil.imagem.tamanho_gb:.1f}".replace(".", ","),

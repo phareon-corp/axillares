@@ -6,7 +6,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
-    QGridLayout,
     QHBoxLayout,
     QVBoxLayout,
     QWidget,
@@ -14,7 +13,7 @@ from PySide6.QtWidgets import (
 
 from axillares.core import explicacoes as ex
 from axillares.core.modelos import Etapa
-from axillares.gui.componentes import repolir, rotulo
+from axillares.gui.componentes import GradeResponsiva, repolir, rotulo
 from axillares.gui.tema import Espaco, Papel
 
 COLUNAS = 3
@@ -77,23 +76,17 @@ class CartaoPasso(QFrame):
         repolir(self.marca)
 
 
-class FluxoExplicado(QWidget):
+class FluxoExplicado(GradeResponsiva):
     """Grade com os passos do fluxo GDS; os da síntese vêm primeiro e valem para as duas."""
 
     def __init__(self) -> None:
-        super().__init__()
-        grade = QGridLayout(self)
-        grade.setContentsMargins(0, 0, 0, 0)
-        grade.setSpacing(1)
+        super().__init__(min_coluna=260, max_colunas=COLUNAS)
         da_sintese = {p.id for p in ex.etapa(Etapa.SINTESE).passos}
         self.cartoes: dict[str, CartaoPasso] = {}
         for i, passo in enumerate(ex.etapa(Etapa.GDS).passos):
             c = CartaoPasso(i + 1, passo, passo.id not in da_sintese)
-            grade.addWidget(c, i // COLUNAS, i % COLUNAS)
+            self.adicionar(c)
             self.cartoes[passo.id] = c
-        for col in range(COLUNAS):
-            grade.setColumnStretch(col, 1)
-        self.setProperty("tipo", "grade")
         self._ordem = list(self.cartoes)
         self._atual: str | None = None
 

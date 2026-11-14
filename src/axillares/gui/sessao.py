@@ -74,6 +74,9 @@ class Sessao(QObject):
 
         self._rodar(criar, self._definir)
 
+    def definir(self, projeto: Projeto) -> None:
+        self._definir(projeto)
+
     def _definir(self, projeto: Projeto) -> None:
         self.projeto = projeto
         self.projeto_mudou.emit(projeto)

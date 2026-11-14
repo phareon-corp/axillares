@@ -9,9 +9,12 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QIcon
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QDialog,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -21,22 +24,30 @@ from PySide6.QtWidgets import (
 from axillares import __version__
 from axillares.ambiente.executor import Executor, ExecutorReal
 from axillares.ambiente.perfil import Perfil, carregar_perfil
+from axillares.core import recentes
+from axillares.core.novo import criar_projeto
+from axillares.core.projeto import ErroProjeto, carregar_projeto, encontrar_raiz
 from axillares.gui import tarefas
 from axillares.gui import tema as t
 from axillares.gui.componentes import Ponto, Trama, botao, regua, rotulo
-from axillares.gui.sessao import Sessao
+from axillares.gui.dialogos import DialogoNovoProjeto
+from axillares.gui.espaco import (
+    ABERTURA,
+    COMPARAR,
+    EDITOR,
+    EXECUCOES,
+    LAYOUT,
+    PROJETO,
+    AbaProjeto,
+    AreaProjeto,
+    BarraProjetos,
+)
 from axillares.gui.telas.abertura import TelaAbertura
-from axillares.gui.telas.comparar import TelaComparar
-from axillares.gui.telas.editor import TelaEditor
-from axillares.gui.telas.execucoes import TelaExecucoes
-from axillares.gui.telas.layout import TelaLayout
-from axillares.gui.telas.projeto import TelaProjeto
 from axillares.gui.tema import Espaco, Modo, Papel
 from axillares.motor import Motor, obter_motor
 
 ICONE = t.PASTA / "icones" / "axillares.svg"
 
-ABERTURA, PROJETO, EDITOR, EXECUCOES, LAYOUT, COMPARAR = range(6)
 # (número, nome, precisa de projeto aberto)
 SECOES = (
     ("01", "Abertura", False),
@@ -188,6 +199,8 @@ class FaixaAviso(QFrame):
 
 
 class JanelaPrincipal(QMainWindow):
+    """Trilho à esquerda; à direita, as abas dos projetos abertos e a tela corrente."""
+
     def __init__(
         self,
         perfil: Perfil | None = None,
@@ -201,9 +214,14 @@ class JanelaPrincipal(QMainWindow):
         self.setWindowTitle("Axillares")
         self.setWindowIcon(QIcon(str(ICONE)))
         self.resize(1320, 860)
-        self.setMinimumSize(1040, 680)
-        self.sessao = Sessao(fabrica_motor)
+        self.setMinimumSize(900, 600)
+        self._fabrica_motor = fabrica_motor
+        self._fabrica_editor = fabrica_editor
+        self.areas: list[AreaProjeto] = []
+        self.ativa: AreaProjeto | None = None
+        self.indice = ABERTURA
         self._pode_fechar = False
+        self._tarefas: list[tarefas.Tarefa] = []
 
         raiz = Trama()
         raiz.setObjectName("raiz")
@@ -215,6 +233,10 @@ class JanelaPrincipal(QMainWindow):
         direita = QVBoxLayout()
         direita.setContentsMargins(0, 0, 0, 0)
         direita.setSpacing(0)
+        self.barra = BarraProjetos()
+        self.barra.novo.connect(self.novo_projeto)
+        self.barra.abrir.connect(self.escolher_pasta)
+        direita.addWidget(self.barra)
         self.pilha = QStackedWidget()
         direita.addWidget(self.pilha, 1)
         self.aviso = FaixaAviso()
@@ -222,76 +244,259 @@ class JanelaPrincipal(QMainWindow):
         lay.addLayout(direita, 1)
 
         self.abertura = TelaAbertura(perfil or carregar_perfil(), fabrica_executor)
-        self.projeto = TelaProjeto(self.sessao)
-        self.editor = TelaEditor(self.sessao, fabrica_editor)
-        self.execucoes = TelaExecucoes(self.sessao)
-        self.layout_ = TelaLayout(self.sessao)
-        self.comparar = TelaComparar(self.sessao)
-        for tela in (
-            self.abertura,
-            self.projeto,
-            self.editor,
-            self.execucoes,
-            self.layout_,
-            self.comparar,
-        ):
-            self.pilha.addWidget(tela)
-
+        self.pilha.addWidget(self.abertura)
         self.trilho.grupo.idClicked.connect(self.ir_para)
-        self.abertura.botao_novo.clicked.connect(self.projeto.novo_projeto)
-        self.abertura.botao_abrir.clicked.connect(self.projeto.abrir_pasta)
-        self.abertura.abrir_projeto.connect(self.sessao.abrir)
-        self.execucoes.lista.comparar.connect(self._comparar)
-        self.sessao.projeto_mudou.connect(self._projeto_mudou)
-        self.sessao.erro.connect(self.aviso.mostrar)
-        self.sessao.pedir_tela.connect(self._pedido_de_tela)
+        self.abertura.botao_novo.clicked.connect(self.novo_projeto)
+        self.abertura.botao_abrir.clicked.connect(self.escolher_pasta)
+        self.abertura.abrir_projeto.connect(self.abrir_projeto)
         self.setCentralWidget(raiz)
 
         self.abertura.carregar_recentes()
         if verificar_ao_abrir:
             self.abertura.verificar()
         if projeto_inicial is not None:
-            self.sessao.abrir(projeto_inicial)
+            self.abrir_projeto(projeto_inicial)
+
+    # --- atalhos para o projeto ativo (telas e testes) ----------------------------------------
+
+    @property
+    def sessao(self):
+        return self.ativa.sessao if self.ativa else None
+
+    @property
+    def projeto(self):
+        return self.ativa.projeto
+
+    @property
+    def editor(self):
+        return self.ativa.editor
+
+    @property
+    def execucoes(self):
+        return self.ativa.execucoes
+
+    @property
+    def layout_(self):
+        return self.ativa.layout_
+
+    @property
+    def comparar(self):
+        return self.ativa.comparar
+
+    # --- abrir, criar, fechar projetos --------------------------------------------------------
+
+    def _rodar(self, funcao, ao_concluir) -> None:
+        tarefa = tarefas.em_segundo_plano(funcao, self)
+        tarefa.concluido.connect(ao_concluir)
+        tarefa.falhou.connect(self.aviso.mostrar)
+        self._tarefas = [x for x in self._tarefas if x.rodando] + [tarefa]
+        tarefa.iniciar()
+
+    def area_de(self, raiz: Path) -> AreaProjeto | None:
+        raiz = Path(raiz).resolve()
+        return next((a for a in self.areas if a.raiz == raiz), None)
+
+    def abrir_projeto(self, pasta: Path) -> None:
+        """Abre numa aba nova; se já estiver aberto, só muda para a aba dele."""
+        try:
+            raiz = encontrar_raiz(Path(pasta))
+        except ErroProjeto as erro:
+            self.aviso.mostrar(str(erro))
+            return
+        existente = self.area_de(raiz)
+        if existente is not None:
+            self.ativar(existente)
+            return
+
+        def carregar():
+            projeto = carregar_projeto(raiz)
+            recentes.registrar(projeto.raiz, projeto.nome)
+            return projeto
+
+        self._rodar(carregar, self._adicionar)
+
+    def criar_projeto(self, nome, destino, modelo="vazio", pdk="skywater130", frequencia_mhz=100.0):
+        def criar():
+            projeto = carregar_projeto(
+                criar_projeto(nome, Path(destino), modelo, pdk, frequencia_mhz)
+            )
+            recentes.registrar(projeto.raiz, projeto.nome)
+            return projeto
+
+        self._rodar(criar, self._adicionar)
+
+    def novo_projeto(self) -> None:
+        dialogo = DialogoNovoProjeto(self)
+        if dialogo.exec() == QDialog.DialogCode.Accepted:
+            self.criar_projeto(**_args_criacao(dialogo.escolhas()))
+
+    def escolher_pasta(self) -> None:
+        inicio = str(self.ativa.raiz.parent) if self.ativa else str(Path.home())
+        pasta = QFileDialog.getExistingDirectory(
+            self, "Abrir projeto (pasta com axil.toml)", inicio
+        )
+        if pasta:
+            self.abrir_projeto(Path(pasta))
+
+    def _fontes(self) -> list:
+        return [(a.nome, a.sessao.caderno) for a in self.areas if a.sessao.caderno]
+
+    def _adicionar(self, projeto) -> None:
+        existente = self.area_de(projeto.raiz)
+        if existente is not None:
+            self.ativar(existente)
+            return
+        area = AreaProjeto(projeto, self._fabrica_motor, self._fabrica_editor, self._fontes)
+        area.sessao.erro.connect(self.aviso.mostrar)
+        area.sessao.pedir_tela.connect(lambda nome, arg, a=area: self._pedido_de_tela(a, nome, arg))
+        area.sessao.execucoes_mudaram.connect(self._execucoes_mudaram)
+        area.execucoes.lista.comparar.connect(lambda x, y, a=area: self._comparar(a, x, y))
+        self.areas.append(area)
+        self.pilha.addWidget(area)
+        aba = AbaProjeto(area)
+        aba.clicada.connect(self.ativar)
+        aba.fechar.connect(self.fechar_projeto)
+        self.barra.adicionar(aba)
+        # a área nova entrou na lista de fontes: todos os layouts passam a enxergá-la
+        for a in self.areas:
+            a.layout_._recarregar_se_visivel()
+        self.ativar(area, PROJETO)
+
+    def _execucoes_mudaram(self) -> None:
+        # um layout pode estar mostrando execuções de outro projeto
+        for a in self.areas:
+            a.layout_._recarregar_se_visivel()
+
+    def ativar(self, area: AreaProjeto, indice: int | None = None) -> None:
+        self.ativa = area
+        self.barra.ativar(area)
+        self.trilho.projeto_aberto(area.nome)
+        self.setWindowTitle(f"{area.nome} — Axillares")
+        self.ir_para(indice or area.indice)
+
+    def fechar_projeto(self, area: AreaProjeto) -> bool:
+        """Fecha uma aba de projeto. Pergunta antes de perder trabalho. True se fechou."""
+        if area.executando:
+            r = QMessageBox.question(
+                self, "Execução em andamento",
+                f"{area.nome} está executando. Interromper e fechar o projeto?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )  # fmt: skip
+            if r != QMessageBox.StandardButton.Yes:
+                return False
+        if area.tem_alteracoes:
+            r = QMessageBox.question(
+                self, "Alterações não salvas",
+                f"Há arquivos de {area.nome} com alterações não salvas. Salvar antes de fechar?",
+                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard
+                | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Save,
+            )  # fmt: skip
+            if r == QMessageBox.StandardButton.Cancel:
+                return False
+            if r == QMessageBox.StandardButton.Save:
+                area.editor._salvar_e_seguir(lambda a=area: self._remover(a))
+                return True
+        self._remover(area)
+        return True
+
+    def _remover(self, area: AreaProjeto) -> None:
+        if area not in self.areas:
+            return
+        area.encerrar()
+        aba = next(a for a in self.barra.abas if a.area is area)
+        self.barra.remover(aba)
+        self.areas.remove(area)
+        self.pilha.removeWidget(area)
+        area.deleteLater()
+        if self.ativa is area:
+            self.ativa = None
+            if self.areas:
+                self.ativar(self.areas[-1])
+            else:
+                self.trilho.projeto_aberto(None)
+                self.setWindowTitle("Axillares")
+                self.barra.ativar(None)
+                self.ir_para(ABERTURA)
+        for a in self.areas:
+            a.layout_._recarregar_se_visivel()
+
+    # --- navegação ----------------------------------------------------------------------------
 
     def ir_para(self, indice: int) -> None:
-        self.trilho.compactar(indice in (EDITOR, LAYOUT))
-        self.pilha.setCurrentIndex(indice)
+        if indice != ABERTURA and self.ativa is None:
+            indice = ABERTURA
+        self.indice = indice
+        self._ajustar_trilho()
         self.trilho.grupo.button(indice).setChecked(True)
         if indice == ABERTURA:
+            self.pilha.setCurrentWidget(self.abertura)
             self.abertura.carregar_recentes()
-        elif indice == LAYOUT and self.layout_.render is None:
-            self.layout_.recarregar()
+            return
+        self.ativa.ir_para(indice)
+        self.pilha.setCurrentWidget(self.ativa)
+
+    def _ajustar_trilho(self) -> None:
+        # Editor e Layout precisam de largura; em janelas estreitas, todas as telas também
+        self.trilho.compactar(self.indice in (EDITOR, LAYOUT) or self.width() < 1180)
+
+    def resizeEvent(self, evento) -> None:
+        super().resizeEvent(evento)
+        self._ajustar_trilho()
+
+    def tela_atual(self) -> int:
+        return self.indice
 
     def abrir_no_editor(self, caminho: Path, linha: int = 0, coluna: int = 1) -> None:
         self.ir_para(EDITOR)
         self.editor.abrir(caminho, linha, coluna)
 
-    def _projeto_mudou(self, projeto) -> None:
-        self.trilho.projeto_aberto(projeto.nome if projeto else None)
-        self.setWindowTitle(f"{projeto.nome} — Axillares" if projeto else "Axillares")
-        self.ir_para(PROJETO)
+    def _comparar(self, area: AreaProjeto, a: str, b: str) -> None:
+        area.comparar.pedir(a, b)
+        self.ativar(area, COMPARAR)
 
-    def _comparar(self, a: str, b: str) -> None:
-        self.comparar.pedir(a, b)
-        self.ir_para(COMPARAR)
-
-    def _pedido_de_tela(self, nome: str, argumento: object) -> None:
+    def _pedido_de_tela(self, area: AreaProjeto, nome: str, argumento: object) -> None:
+        if nome == "criar-projeto":
+            self.criar_projeto(**_args_criacao(argumento))
+            return
+        if nome == "abrir-projeto":
+            self.abrir_projeto(Path(argumento))
+            return
+        self.ativar(area)
         if nome == "execucao":
-            self.execucoes.abrir(str(argumento))
+            area.execucoes.abrir(str(argumento))
             self.ir_para(EXECUCOES)
         elif nome == "como-funciona":
             self.ir_para(PROJETO)
-            self.projeto.mostrar_fluxo()
+            area.projeto.mostrar_fluxo()
         elif nome == "layout":
-            self.layout_.mostrar_execucao(str(argumento))
+            area.layout_.mostrar_execucao(str(argumento))
             self.ir_para(LAYOUT)
 
     def closeEvent(self, evento: QCloseEvent) -> None:
+        if not self._pode_fechar:
+            pendentes = [a for a in self.areas if a.tem_alteracoes or a.executando]
+            for area in pendentes:
+                self.ativar(area)
+                if not self.fechar_projeto(area):
+                    evento.ignore()
+                    return
         self.abertura.encerrar()
-        self.layout_.encerrar()
-        self.sessao.encerrar()
+        for area in list(self.areas):
+            area.encerrar()
         tarefas.esperar_todas()
         super().closeEvent(evento)
+
+
+def _args_criacao(escolhas: dict) -> dict:
+    return {
+        "nome": escolhas["nome"],
+        "destino": escolhas["destino"],
+        "modelo": escolhas["modelo"],
+        "pdk": escolhas["pdk"],
+        "frequencia_mhz": escolhas["frequencia_mhz"],
+    }
 
 
 __all__ = ["JanelaPrincipal"]

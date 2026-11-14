@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLineEdit,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -25,11 +27,23 @@ from axillares.gui.componentes import botao, repolir, rotulo
 from axillares.gui.tema import Espaco, Papel
 
 PDKS = (
-    ("skywater130", "SkyWater 130 nm (sky130)", "testado"),
-    ("gf180", "GlobalFoundries 180 nm (gf180mcu)", "experimental"),
-    ("ihp130", "IHP 130 nm (SG13G2)", "experimental"),
+    ("skywater130", "SkyWater 130 nm", "testado"),
+    ("gf180", "GlobalFoundries 180 nm", "experimental"),
+    ("ihp130", "IHP 130 nm", "experimental"),
 )
 _NOME = re.compile(r"^[A-Za-z_][A-Za-z0-9_\-]*$")
+
+
+class _Responsivo(QWidget):
+    """Avisa a própria largura a cada redimensionamento."""
+
+    def __init__(self, ao_mudar) -> None:
+        super().__init__()
+        self._ao_mudar = ao_mudar
+
+    def resizeEvent(self, evento) -> None:
+        super().resizeEvent(evento)
+        self._ao_mudar(self.width())
 
 
 class CartaoModelo(QFrame):
@@ -48,7 +62,9 @@ class CartaoModelo(QFrame):
         topo.addWidget(rotulo(m.nivel, Papel.ROTULO, "3"))
         topo.addStretch(1)
         lay.addLayout(topo)
-        lay.addWidget(rotulo(m.titulo, Papel.TITULO))
+        titulo = rotulo(m.titulo, Papel.TITULO)
+        titulo.setWordWrap(True)
+        lay.addWidget(titulo)
         desc = rotulo(m.descricao, Papel.PEQUENO, "2")
         desc.setWordWrap(True)
         lay.addWidget(desc)
@@ -57,7 +73,6 @@ class CartaoModelo(QFrame):
             aprende.setWordWrap(True)
             lay.addWidget(aprende)
         lay.addStretch(1)
-        self.setMinimumHeight(150)
 
     def marcar(self, sim: bool) -> None:
         self.setProperty("escolhido", "sim" if sim else "nao")
@@ -72,7 +87,12 @@ class DialogoNovoProjeto(QDialog):
     def __init__(self, pai: QWidget | None = None) -> None:
         super().__init__(pai)
         self.setWindowTitle("Novo projeto")
-        self.setMinimumWidth(820)
+        self.setMinimumWidth(640)
+        tela = QGuiApplication.primaryScreen()
+        disponivel = tela.availableGeometry() if tela else None
+        if disponivel is not None:
+            self.resize(min(900, int(disponivel.width() * 0.9)),
+                        min(860, int(disponivel.height() * 0.9)))  # fmt: skip
         self.modelo_id = "vazio"
         lay = QVBoxLayout(self)
         lay.setContentsMargins(Espaco.XL, Espaco.XL, Espaco.XL, Espaco.L)
@@ -82,7 +102,16 @@ class DialogoNovoProjeto(QDialog):
         lay.addWidget(titulo)
         lay.addSpacing(Espaco.S)
 
-        grade = QGridLayout()
+        # os cartões rolam se a tela for baixa; nada é espremido
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        area.setFrameShape(QFrame.Shape.NoFrame)
+        area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        miolo = _Responsivo(self._reorganizar)
+        grade = QGridLayout(miolo)
+        self._grade = grade
+        self._colunas = 2
+        grade.setContentsMargins(0, 0, 4, 0)
         grade.setSpacing(Espaco.S + 2)
         self.cartoes: dict[str, CartaoModelo] = {}
         for i, m in enumerate(modelos()):
@@ -90,7 +119,8 @@ class DialogoNovoProjeto(QDialog):
             c.escolhido.connect(self._escolher)
             grade.addWidget(c, i // 2, i % 2)
             self.cartoes[m.id] = c
-        lay.addLayout(grade)
+        area.setWidget(miolo)
+        lay.addWidget(area, 1)
         lay.addSpacing(Espaco.S)
 
         campos = QGridLayout()
@@ -115,7 +145,7 @@ class DialogoNovoProjeto(QDialog):
         self.pdk = QComboBox()
         self.pdk.setFont(t.fonte(Papel.CORPO))
         for valor, nome, situacao in PDKS:
-            self.pdk.addItem(f"{nome}  ·  {situacao}", valor)
+            self.pdk.addItem(f"{nome} — {situacao}", valor)
         campos.addWidget(self.pdk, 3, 0)
         self.frequencia = QDoubleSpinBox()
         self.frequencia.setFont(t.fonte(Papel.MONO))
@@ -125,7 +155,7 @@ class DialogoNovoProjeto(QDialog):
         self.frequencia.setSuffix(" MHz")
         campos.addWidget(self.frequencia, 3, 1)
         campos.setColumnStretch(0, 1)
-        campos.setColumnStretch(1, 2)
+        campos.setColumnStretch(1, 1)
         lay.addLayout(campos)
 
         self.aviso = rotulo("", Papel.PEQUENO, "falha")
@@ -142,6 +172,16 @@ class DialogoNovoProjeto(QDialog):
         lay.addLayout(acoes)
         self._escolher("vazio")
         self._validar()
+
+    def _reorganizar(self, largura: int) -> None:
+        """Duas colunas de cartões quando cabe; uma só em telas estreitas."""
+        colunas = 2 if largura >= 620 else 1
+        if colunas == self._colunas:
+            return
+        self._colunas = colunas
+        for i, c in enumerate(self.cartoes.values()):
+            self._grade.removeWidget(c)
+            self._grade.addWidget(c, i // colunas, i % colunas)
 
     def _escolher(self, ident: str) -> None:
         self.modelo_id = ident

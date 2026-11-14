@@ -5,6 +5,8 @@ from __future__ import annotations
 from PySide6.QtCore import (
     Property,
     QEasingCurve,
+    QEvent,
+    QObject,
     QPointF,
     QRectF,
     QSize,
@@ -13,10 +15,12 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPen, QRadialGradient
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -48,6 +52,17 @@ class Rotulo(QLabel):
 
     def setText(self, texto: str) -> None:
         super().setText(t.caixa_alta(texto) if self._caixa_alta and "<" not in texto else texto)
+
+    # Responsividade: um QLabel com quebra de linha informa uma altura mínima que ignora a quebra,
+    # e o layout o espreme até o texto sumir atrás do vizinho. Aqui a altura mínima acompanha a
+    # largura real — o layout cresce (ou rola) em vez de cortar o texto.
+    def resizeEvent(self, evento) -> None:
+        super().resizeEvent(evento)
+        if self.wordWrap():
+            necessaria = self.heightForWidth(self.width())
+            if necessaria > 0 and necessaria != self.minimumHeight():
+                self.setMinimumHeight(necessaria)
+                self.updateGeometry()
 
 
 def rotulo(
@@ -103,7 +118,10 @@ class Ponto(QWidget):
             self._anim.setLoopCount(-1)
             self._anim.valueChanged.connect(self._ao_animar)
             self._anim.start()
-        t.tema().mudou.connect(lambda _p: self.update())
+        t.tema().mudou.connect(self._tema_mudou)
+
+    def _tema_mudou(self, _paleta: object) -> None:
+        self.update()
 
     def definir_token(self, token: str) -> None:
         self._token = token
@@ -163,7 +181,9 @@ class NumeroSecao(QWidget):
         topo.addWidget(rotulo(titulo, Papel.NUMERO_SECAO, "2"))
         topo.addStretch(1)
         self.apoio = rotulo(apoio, Papel.ROTULO, "3")
-        topo.addWidget(self.apoio)
+        self.apoio.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.apoio.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        topo.addWidget(self.apoio, 1)
         lay.addLayout(topo)
         lay.addWidget(regua())
 
@@ -178,7 +198,10 @@ class Pilula(QWidget):
         self._fonte = t.fonte(Papel.ETIQUETA)
         self._fonte.setCapitalization(self._fonte.Capitalization.MixedCase)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        t.tema().mudou.connect(lambda _p: self.update())
+        t.tema().mudou.connect(self._tema_mudou)
+
+    def _tema_mudou(self, _paleta: object) -> None:
+        self.update()
 
     def definir(self, texto: str, token: str) -> None:
         self._texto, self._token = t.caixa_alta(texto), token
@@ -219,7 +242,10 @@ class Trama(QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
         self._halo = 1.0
-        t.tema().mudou.connect(lambda _p: self.update())
+        t.tema().mudou.connect(self._tema_mudou)
+
+    def _tema_mudou(self, _paleta: object) -> None:
+        self.update()
 
     def _get_halo(self) -> float:
         return self._halo
@@ -278,9 +304,12 @@ class Metrica(QFrame):
         lay.addWidget(self._valor)
         lay.addWidget(self._nota)
         lay.addStretch(1)
-        self.setMinimumWidth(170)
+        self.setMinimumWidth(150)
         self._ultimo: tuple[str, str, str] = ("—", "", "")
-        t.tema().mudou.connect(lambda _p: self.definir(*self._ultimo))
+        t.tema().mudou.connect(self._tema_mudou)
+
+    def _tema_mudou(self, _paleta: object) -> None:
+        self.definir(*self._ultimo)
 
     def definir(self, valor: str, unidade: str = "", nota: str = "") -> None:
         self._ultimo = (valor, unidade, nota)
@@ -418,6 +447,7 @@ def layout_de_tela(w: QWidget) -> QVBoxLayout:
     lay = QVBoxLayout(w)
     lay.setContentsMargins(Espaco.MARGEM, Espaco.XL + 8, Espaco.MARGEM, Espaco.XXL)
     lay.setSpacing(Espaco.XL - 4)
+    _MargemResponsiva(w, Espaco.XL + 8, Espaco.XXL)
     return lay
 
 
@@ -431,3 +461,91 @@ def tom_da_situacao(situacao) -> tuple[str, str]:
         Situacao.INTERROMPIDA: "aviso",
     }.get(situacao, "tinta_3")
     return ROTULO_SITUACAO.get(situacao, str(situacao)), token
+
+
+# --- responsividade -----------------------------------------------------------------------------
+
+
+class GradeResponsiva(QFrame):
+    """Grade que escolhe o número de colunas pela largura: 4 → 2 → 1, sem nunca cortar."""
+
+    def __init__(self, min_coluna: int = 220, max_colunas: int = 4, tipo: str = "grade") -> None:
+        super().__init__()
+        self.setProperty("tipo", tipo)
+        self._min = min_coluna
+        self._max = max_colunas
+        self._itens: list[QWidget] = []
+        self._colunas = 0
+        self._grade = QGridLayout(self)
+        self._grade.setContentsMargins(0, 0, 0, 0)
+        self._grade.setSpacing(1)
+        # O arranjo atual não pode impor a largura mínima: senão a grade nunca fica estreita o
+        # bastante para receber o redimensionamento que a faria usar menos colunas.
+        self._grade.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
+
+    def minimumSizeHint(self) -> QSize:
+        largura = max((w.minimumSizeHint().width() for w in self._itens), default=0)
+        return QSize(largura, super().minimumSizeHint().height())
+
+    def adicionar(self, w: QWidget) -> None:
+        self._itens.append(w)
+        self._colunas = 0
+        self._reorganizar(self.width() or self._min * self._max)
+
+    def _reorganizar(self, largura: int) -> None:
+        colunas = max(1, min(self._max, largura // self._min))
+        # duas colunas para 4 itens fica melhor que 3 + 1 sozinho
+        if colunas == 3 and len(self._itens) == 4:
+            colunas = 2
+        if colunas == self._colunas:
+            return
+        self._colunas = colunas
+        for w in self._itens:
+            self._grade.removeWidget(w)
+        for i, w in enumerate(self._itens):
+            self._grade.addWidget(w, i // colunas, i % colunas)
+        for c in range(self._max):
+            self._grade.setColumnStretch(c, 1 if c < colunas else 0)
+
+    def resizeEvent(self, evento) -> None:
+        super().resizeEvent(evento)
+        self._reorganizar(self.width())
+
+
+class LinhaResponsiva(QWidget):
+    """Lado a lado quando cabe; um embaixo do outro quando a largura é menor que `limiar`."""
+
+    def __init__(self, limiar: int = 760, espaco: int = Espaco.L) -> None:
+        super().__init__()
+        self._limiar = limiar
+        self.caixa = QBoxLayout(QBoxLayout.Direction.LeftToRight, self)
+        self.caixa.setContentsMargins(0, 0, 0, 0)
+        self.caixa.setSpacing(espaco)
+
+    def resizeEvent(self, evento) -> None:
+        super().resizeEvent(evento)
+        direcao = (
+            QBoxLayout.Direction.LeftToRight
+            if self.width() >= self._limiar
+            else QBoxLayout.Direction.TopToBottom
+        )
+        if self.caixa.direction() != direcao:
+            self.caixa.setDirection(direcao)
+
+
+class _MargemResponsiva(QObject):
+    """Margens laterais que encolhem em telas estreitas (56 → 32 → 18 px)."""
+
+    def __init__(self, alvo: QWidget, topo: int, base: int) -> None:
+        super().__init__(alvo)
+        self._topo, self._base = topo, base
+        alvo.installEventFilter(self)
+
+    def eventFilter(self, obj, evento) -> bool:
+        if evento.type() == QEvent.Type.Resize:
+            largura = obj.width()
+            lado = Espaco.MARGEM if largura >= 1000 else 32 if largura >= 720 else 18
+            lay = obj.layout()
+            if lay is not None and lay.contentsMargins().left() != lado:
+                lay.setContentsMargins(lado, self._topo, lado, self._base)
+        return False

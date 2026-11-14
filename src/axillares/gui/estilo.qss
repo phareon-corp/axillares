@@ -187,3 +187,11 @@ QLabel[tipo="sigla"] {
 }
 QFrame[tipo="faixa-contexto"] { background: ${fundo}; border-bottom: 1px solid ${linha}; }
 QTreeWidget::item { padding: 0; }
+
+/* ---- espaço de trabalho e painéis ------------------------------------------------------- */
+QFrame[tipo="barra-projetos"] { background: ${fundo}; border-bottom: 1px solid ${linha}; }
+QFrame[tipo="aba-projeto"] { background: transparent; border-right: 1px solid ${linha}; border-bottom: 2px solid transparent; }
+QFrame[tipo="aba-projeto"]:hover { background: ${fundo_2}; }
+QFrame[tipo="aba-projeto"][ativa="sim"] { background: ${fundo_2}; border-bottom: 2px solid ${acento}; }
+QFrame[tipo="painel-layout"] { border: 1px solid ${linha}; border-top: 2px solid ${linha}; }
+QFrame[tipo="painel-layout"][ativo="sim"] { border-top: 2px solid ${acento}; }

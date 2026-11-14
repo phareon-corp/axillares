@@ -174,6 +174,8 @@ class Papel(Enum):
     ETIQUETA = Estilo(Familia.MONO, 10, 500, 0.15, caixa_alta=True)
     MONO = Estilo(Familia.MONO, 12, 400, 0.04)
     NAV = Estilo(Familia.MONO, 11, 500, 0.12, caixa_alta=True)
+    SEGMENTO = Estilo(Familia.MONO, 10, 500, 0.05, caixa_alta=True)
+    """Botões segmentados: espaçamento menor, para caber em painéis estreitos."""
 
 
 # Unidades mantêm a grafia em texto de caixa alta: "µm" virar "ΜM" (≈ "MM") seria um erro de

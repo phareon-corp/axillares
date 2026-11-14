@@ -25,6 +25,8 @@ from axillares.core.modelos import Etapa, Situacao, TipoArtefato
 from axillares.gui import tarefas
 from axillares.gui import tema as t
 from axillares.gui.componentes import (
+    GradeResponsiva,
+    LinhaResponsiva,
     Metrica,
     NumeroSecao,
     Pilula,
@@ -32,7 +34,6 @@ from axillares.gui.componentes import (
     botao,
     cabecalho_tela,
     layout_de_tela,
-    quadro,
     rotulo,
     tela_rolavel,
     tom_da_situacao,
@@ -50,10 +51,10 @@ def _segmentos(opcoes: list[tuple[str, object]], ao_mudar) -> tuple[QHBoxLayout,
         b = QPushButton(texto)
         b.setProperty("tipo", "segmento")
         b.setProperty("posicao", "inicio" if i == 0 else "fim" if i == len(opcoes) - 1 else "meio")
-        b.setFont(t.fonte(Papel.ETIQUETA))
+        b.setFont(t.fonte(Papel.SEGMENTO))
         b.setCheckable(True)
         b.setChecked(i == 0)
-        b.setMinimumWidth(72)
+        b.setMinimumWidth(48)
         b.setCursor(Qt.CursorShape.PointingHandCursor)
         b.clicked.connect(lambda _c=False, v=valor: ao_mudar(v))
         grupo.addButton(b, i)
@@ -197,7 +198,8 @@ class DetalheExecucao(QWidget):
         volta.clicked.connect(self.voltar)
         self.lay.addWidget(volta, 0, Qt.AlignmentFlag.AlignLeft)
 
-        topo = QHBoxLayout()
+        linha_topo = LinhaResponsiva(limiar=860)
+        topo = linha_topo.caixa
         cab, self.titulo = cabecalho_tela("Execução", "")
         self.eyebrow = cab.itemAt(0).widget()
         topo.addLayout(cab, 1)
@@ -220,15 +222,12 @@ class DetalheExecucao(QWidget):
         acoes.addWidget(self.botao_gds)
         lado.addLayout(acoes)
         topo.addLayout(lado)
-        self.lay.addLayout(topo)
+        self.lay.addWidget(linha_topo)
 
         self.aviso = QVBoxLayout()
         self.lay.addLayout(self.aviso)
 
-        grade = quadro("grade")
-        g = QHBoxLayout(grade)
-        g.setContentsMargins(0, 0, 0, 0)
-        g.setSpacing(1)
+        grade = GradeResponsiva(min_coluna=200)
         self.celulas = {
             "fmax_mhz": Metrica("Frequência máxima"),
             "area_total_um2": Metrica("Área total"),
@@ -236,7 +235,7 @@ class DetalheExecucao(QWidget):
             "folga_setup_ns": Metrica("Folga de setup"),
         }
         for m in self.celulas.values():
-            g.addWidget(m, 1)
+            grade.adicionar(m)
         self.grade = grade
         self.lay.addWidget(grade)
 

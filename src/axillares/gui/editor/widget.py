@@ -92,9 +92,12 @@ class EditorCodigo(QWidget):
         self.ponte.salvar_sinal.connect(lambda c, x, v: self.salvar_pedido.emit(Path(c), x, v))
         self.ponte.acao_sinal.connect(self.acao_pedida)
 
-        t.tema().mudou.connect(lambda _p: self.aplicar_tema())
+        t.tema().mudou.connect(self._tema_mudou)
         self.visao.loadFinished.connect(lambda _ok: self.aplicar_tema())
         self.visao.load(QUrl.fromLocalFile(str(PAGINA)))
+
+    def _tema_mudou(self, _paleta: object) -> None:
+        self.aplicar_tema()
 
     @property
     def esta_pronto(self) -> bool:
