@@ -14,6 +14,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPen, QRadialGradient
 from PySide6.QtWidgets import (
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -272,3 +273,145 @@ class Metrica(QFrame):
             texto += "&#8202;" + t.serifa(unidade, t.paleta().tinta_2, 20)
         self._valor.setText(texto)
         self._nota.setText(nota)
+
+
+# --- tabela e cabeçalho -----------------------------------------------------------------------
+
+
+class _LinhaClicavel(QFrame):
+    def __init__(self, ao_clicar) -> None:
+        super().__init__()
+        self._ao_clicar = ao_clicar
+        self.setProperty("tipo", "linha-tabela")
+        if ao_clicar:
+            self.setProperty("selecionavel", "sim")
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mouseReleaseEvent(self, evento) -> None:
+        if self._ao_clicar and evento.button() == Qt.MouseButton.LeftButton:
+            self._ao_clicar()
+        super().mouseReleaseEvent(evento)
+
+
+class Tabela(QWidget):
+    """Tabela leve: cabeçalho mono em caixa alta, linhas separadas por hairline.
+
+    colunas: [(título, peso, alinhamento 'e'|'d')]. Células: texto (fonte por coluna) ou widget.
+    """
+
+    def __init__(self, colunas: list[tuple[str, int, str]], papeis: list[Papel] | None = None):
+        super().__init__()
+        self.colunas = colunas
+        self.papeis = papeis or [Papel.CORPO] * len(colunas)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        cab = QWidget()
+        g = QGridLayout(cab)
+        g.setContentsMargins(Espaco.S, 0, Espaco.S, Espaco.S)
+        g.setHorizontalSpacing(Espaco.M)
+        for i, (titulo, peso, alin) in enumerate(colunas):
+            r = rotulo(titulo, Papel.ROTULO, "3")
+            r.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+            if alin == "d":
+                r.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            g.addWidget(r, 0, i)
+            g.setColumnStretch(i, peso)
+        lay.addWidget(cab)
+        self._corpo = quadro("tabela")
+        self._linhas = QVBoxLayout(self._corpo)
+        self._linhas.setContentsMargins(0, 0, 0, 0)
+        self._linhas.setSpacing(0)
+        lay.addWidget(self._corpo)
+        self.vazio = rotulo("", Papel.PEQUENO, "2")
+        self.vazio.setContentsMargins(Espaco.S, Espaco.M, 0, 0)
+        lay.addWidget(self.vazio)
+
+    def limpar(self) -> None:
+        while self._linhas.count():
+            item = self._linhas.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+    def adicionar(self, celulas: list, ao_clicar=None, tons: list[str | None] | None = None):
+        linha = _LinhaClicavel(ao_clicar)
+        g = QGridLayout(linha)
+        g.setContentsMargins(Espaco.S, Espaco.M - 5, Espaco.S, Espaco.M - 5)
+        g.setHorizontalSpacing(Espaco.M)
+        for i, celula in enumerate(celulas):
+            _t, peso, alin = self.colunas[i]
+            if isinstance(celula, QWidget):
+                w = celula
+            else:
+                tom = tons[i] if tons else None
+                w = rotulo(str(celula), self.papeis[i], tom)
+                w.setTextFormat(
+                    Qt.TextFormat.RichText if "<" in str(celula) else Qt.TextFormat.PlainText
+                )
+            alinhamento = Qt.AlignmentFlag.AlignVCenter | (
+                Qt.AlignmentFlag.AlignRight if alin == "d" else Qt.AlignmentFlag.AlignLeft
+            )
+            if isinstance(w, QLabel):
+                # a largura vem só do peso da coluna: as linhas ficam alinhadas entre si
+                w.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+                w.setAlignment(alinhamento)
+                g.addWidget(w, 0, i)
+            else:
+                g.addWidget(w, 0, i, alinhamento)
+            g.setColumnStretch(i, peso)
+            g.setColumnMinimumWidth(i, 0)
+        self._linhas.addWidget(linha)
+        self.vazio.hide()
+        return linha
+
+    def mostrar_vazio(self, texto: str) -> None:
+        self.limpar()
+        self.vazio.setText(texto)
+        self.vazio.show()
+
+
+def cabecalho_tela(eyebrow: str, titulo: str, lead: str = "") -> tuple[QVBoxLayout, QLabel]:
+    """Eyebrow + título display (+ lead). Devolve o layout e o rótulo do título."""
+    lay = QVBoxLayout()
+    lay.setSpacing(Espaco.M - 2)
+    lay.addWidget(Eyebrow(eyebrow))
+    t_ = rotulo(titulo, Papel.HERO, rico=True)
+    t_.setWordWrap(True)
+    lay.addWidget(t_)
+    if lead:
+        r = rotulo(lead, Papel.LEAD, "2")
+        r.setWordWrap(True)
+        r.setMaximumWidth(620)
+        lay.addWidget(r)
+    return lay, t_
+
+
+def tela_rolavel(conteudo: QWidget) -> QWidget:
+    """Envolve o conteúdo de uma tela com rolagem vertical e as margens padrão."""
+    from PySide6.QtWidgets import QScrollArea
+
+    rolagem = QScrollArea()
+    rolagem.setWidgetResizable(True)
+    rolagem.setFrameShape(QFrame.Shape.NoFrame)
+    rolagem.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    rolagem.setWidget(conteudo)
+    return rolagem
+
+
+def layout_de_tela(w: QWidget) -> QVBoxLayout:
+    lay = QVBoxLayout(w)
+    lay.setContentsMargins(Espaco.MARGEM, Espaco.XL + 8, Espaco.MARGEM, Espaco.XXL)
+    lay.setSpacing(Espaco.XL - 4)
+    return lay
+
+
+def tom_da_situacao(situacao) -> tuple[str, str]:
+    from axillares.core.formato import ROTULO_SITUACAO
+    from axillares.core.modelos import Situacao
+
+    token = {
+        Situacao.SUCESSO: "ok",
+        Situacao.FALHA: "falha",
+        Situacao.INTERROMPIDA: "aviso",
+    }.get(situacao, "tinta_3")
+    return ROTULO_SITUACAO.get(situacao, str(situacao)), token

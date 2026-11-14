@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -21,6 +22,7 @@ from axillares.ambiente.diagnostico import Diagnostico
 from axillares.ambiente.executor import Executor
 from axillares.ambiente.perfil import Comparacao, Origem, Perfil
 from axillares.ambiente.verificacao import FerramentaAvaliada, RelatorioAmbiente, Veredito
+from axillares.core import recentes
 from axillares.gui import tarefas
 from axillares.gui import tema as t
 from axillares.gui.componentes import (
@@ -28,6 +30,7 @@ from axillares.gui.componentes import (
     Metrica,
     NumeroSecao,
     Pilula,
+    Tabela,
     botao,
     quadro,
     repolir,
@@ -97,7 +100,7 @@ def _cabecalho_tabela() -> QWidget:
 class CartaoDiagnostico(QFrame):
     """O que aconteceu · por que importa · próximo passo. O log fica atrás de um clique."""
 
-    def __init__(self, d: Diagnostico) -> None:
+    def __init__(self, d: Diagnostico, mensagens: list[str] | None = None) -> None:
         super().__init__()
         self.setProperty("tipo", "cartao")
         lay = QVBoxLayout(self)
@@ -115,6 +118,11 @@ class CartaoDiagnostico(QFrame):
         por_que = rotulo(d.por_que, Papel.PEQUENO, "2")
         por_que.setWordWrap(True)
         lay.addWidget(por_que)
+        if mensagens:
+            bloco = rotulo("\n".join(mensagens), Papel.MONO, "2")
+            bloco.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            bloco.setContentsMargins(0, 4, 0, 4)
+            lay.addWidget(bloco)
         passo = QHBoxLayout()
         passo.setSpacing(Espaco.S)
         seta = rotulo("→", Papel.CORPO_FORTE, "acento")
@@ -159,6 +167,8 @@ def _limpar(layout: QVBoxLayout | QGridLayout) -> None:
 class TelaAbertura(QWidget):
     situacao_mudou = Signal(object)
 
+    abrir_projeto = Signal(object)
+
     def __init__(self, perfil: Perfil, fabrica_executor: Callable[[], Executor]) -> None:
         super().__init__()
         self.perfil = perfil
@@ -202,20 +212,19 @@ class TelaAbertura(QWidget):
         lay.addLayout(self._diags)
 
         lay.addWidget(NumeroSecao("03", "Projetos recentes"))
-        vazio = quadro("cartao")
-        vl = QVBoxLayout(vazio)
-        vl.setContentsMargins(Espaco.L, Espaco.L, Espaco.L, Espaco.L)
-        vl.setSpacing(6)
-        vl.addWidget(rotulo("Nenhum projeto ainda.", Papel.CORPO_FORTE))
-        aviso = rotulo(
-            "Criar, abrir e executar projetos chega no próximo módulo (projeto, motor e caderno "
-            "de execuções). O ambiente acima já é o mesmo que eles vão usar.",
-            Papel.PEQUENO,
-            "2",
+        acoes = QHBoxLayout()
+        acoes.setSpacing(Espaco.S + 2)
+        self.botao_novo = botao("Novo projeto  +", "fantasma")
+        self.botao_abrir = botao("Abrir pasta…", "fantasma")
+        acoes.addWidget(self.botao_novo)
+        acoes.addWidget(self.botao_abrir)
+        acoes.addStretch(1)
+        lay.addLayout(acoes)
+        self.recentes = Tabela(
+            [("projeto", 3, "e"), ("pasta", 6, "e"), ("aberto", 2, "d")],
+            [Papel.CORPO_FORTE, Papel.MONO, Papel.MONO],
         )
-        aviso.setWordWrap(True)
-        vl.addWidget(aviso)
-        lay.addWidget(vazio)
+        lay.addWidget(self.recentes)
         lay.addStretch(1)
 
         rodape = rotulo(
@@ -431,6 +440,29 @@ class TelaAbertura(QWidget):
             self._diags.addWidget(CartaoDiagnostico(d))
         repolir(self)
         self.situacao_mudou.emit(relatorio)
+
+    def carregar_recentes(self) -> None:
+        self._tarefa_recentes = tarefas.em_segundo_plano(recentes.listar, self)
+        self._tarefa_recentes.concluido.connect(self._mostrar_recentes)
+        self._tarefa_recentes.iniciar()
+
+    def _mostrar_recentes(self, lista: list[dict]) -> None:
+        self.recentes.limpar()
+        if not lista:
+            self.recentes.mostrar_vazio(
+                "Nenhum projeto ainda. Crie um a partir do exemplo — um contador de 8 bits "
+                "pronto para ir do Verilog ao GDS."
+            )
+            return
+        casa = str(Path.home())
+        for item in lista:
+            caminho = item["caminho"].replace(casa, "~", 1)
+            quando = item.get("aberto_em", "")[:16].replace("T", " ")
+            self.recentes.adicionar(
+                [item["nome"], caminho, quando[5:] if quando else ""],
+                ao_clicar=lambda c=item["caminho"]: self.abrir_projeto.emit(Path(c)),
+                tons=[None, "2", "3"],
+            )
 
     def encerrar(self) -> None:
         if self._tarefa and self._tarefa.rodando:

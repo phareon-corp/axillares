@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QIcon
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -19,20 +20,26 @@ from PySide6.QtWidgets import (
 from axillares import __version__
 from axillares.ambiente.executor import Executor, ExecutorReal
 from axillares.ambiente.perfil import Perfil, carregar_perfil
+from axillares.gui import tarefas
 from axillares.gui import tema as t
-from axillares.gui.componentes import Ponto, Trama, regua, rotulo
+from axillares.gui.componentes import Ponto, Trama, botao, regua, rotulo
+from axillares.gui.sessao import Sessao
 from axillares.gui.telas.abertura import TelaAbertura
+from axillares.gui.telas.comparar import TelaComparar
+from axillares.gui.telas.execucoes import TelaExecucoes
+from axillares.gui.telas.projeto import TelaProjeto
 from axillares.gui.tema import Espaco, Modo, Papel
+from axillares.motor import Motor, obter_motor
 
 ICONE = t.PASTA / "icones" / "axillares.svg"
 
-# (número, nome, disponível agora)
+ABERTURA, PROJETO, EXECUCOES, COMPARAR = range(4)
+# (número, nome, precisa de projeto aberto)
 SECOES = (
-    ("01", "Abertura", True),
+    ("01", "Abertura", False),
     ("02", "Projeto", False),
-    ("03", "Execuções", False),
-    ("04", "Comparar", False),
-    ("05", "Trilha", False),
+    ("03", "Execuções", True),
+    ("04", "Comparar", True),
 )
 
 
@@ -59,20 +66,27 @@ class Trilho(QFrame):
 
         self.grupo = QButtonGroup(self)
         self.grupo.setExclusive(True)
-        for i, (numero, nome, disponivel) in enumerate(SECOES):
+        self._precisam_projeto: list[QPushButton] = []
+        for i, (numero, nome, precisa) in enumerate(SECOES):
             b = QPushButton(f"{numero}   {nome}")
             b.setProperty("tipo", "nav")
             b.setFont(t.fonte(Papel.NAV))
             b.setCheckable(True)
-            b.setEnabled(disponivel)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            if not disponivel:
-                b.setToolTip("Chega num dos próximos módulos.")
+            if precisa:
+                b.setEnabled(False)
+                b.setToolTip("Abra ou crie um projeto primeiro.")
+                self._precisam_projeto.append(b)
             self.grupo.addButton(b, i)
             lay.addWidget(b)
         self.grupo.button(0).setChecked(True)
-        breve = rotulo("02–05 chegam nos próximos módulos", Papel.ROTULO, "3")
-        breve.setWordWrap(True)
+
+        lay.addSpacing(Espaco.L)
+        self.projeto = rotulo("", Papel.ROTULO, "3")
+        self.projeto.setContentsMargins(Espaco.M + 2, 0, Espaco.M, 0)
+        self.projeto.setWordWrap(True)
+        lay.addWidget(self.projeto)
+        breve = rotulo("05   Trilha · em breve", Papel.ROTULO, "3")
         breve.setContentsMargins(Espaco.M + 2, Espaco.M, Espaco.M, 0)
         lay.addWidget(breve)
 
@@ -109,6 +123,39 @@ class Trilho(QFrame):
         indice = (Modo.ESCURO, Modo.CLARO, Modo.SISTEMA).index(t.tema().modo)
         self.modos.button(indice).setChecked(True)
 
+    def projeto_aberto(self, nome: str | None) -> None:
+        for b in self._precisam_projeto:
+            b.setEnabled(nome is not None)
+            b.setToolTip("" if nome else "Abra ou crie um projeto primeiro.")
+        self.projeto.setText(f"ABERTO: {nome}" if nome else "")
+
+
+class FaixaAviso(QFrame):
+    """Mensagem de erro passageira no rodapé — nunca um modal bloqueante."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setProperty("tipo", "faixa-progresso")
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(Espaco.MARGEM, Espaco.M - 2, Espaco.MARGEM, Espaco.M - 2)
+        self.texto = rotulo("", Papel.CORPO)
+        self.texto.setWordWrap(True)
+        self.texto.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        lay.addWidget(rotulo("✕", Papel.CORPO_FORTE, "falha"))
+        lay.addWidget(self.texto, 1)
+        fechar = botao("Fechar", "link")
+        fechar.clicked.connect(self.hide)
+        lay.addWidget(fechar)
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self.hide)
+        self.hide()
+
+    def mostrar(self, mensagem: str) -> None:
+        self.texto.setText(mensagem)
+        self.show()
+        self._timer.start(12_000)
+
 
 class JanelaPrincipal(QMainWindow):
     def __init__(
@@ -116,12 +163,15 @@ class JanelaPrincipal(QMainWindow):
         perfil: Perfil | None = None,
         fabrica_executor: Callable[[], Executor] = ExecutorReal,
         verificar_ao_abrir: bool = True,
+        fabrica_motor: Callable[[str], Motor] = obter_motor,
+        projeto_inicial: Path | None = None,
     ) -> None:
         super().__init__()
         self.setWindowTitle("Axillares")
         self.setWindowIcon(QIcon(str(ICONE)))
         self.resize(1320, 860)
         self.setMinimumSize(1040, 680)
+        self.sessao = Sessao(fabrica_motor)
 
         raiz = Trama()
         raiz.setObjectName("raiz")
@@ -130,17 +180,63 @@ class JanelaPrincipal(QMainWindow):
         lay.setSpacing(0)
         self.trilho = Trilho()
         lay.addWidget(self.trilho)
+        direita = QVBoxLayout()
+        direita.setContentsMargins(0, 0, 0, 0)
+        direita.setSpacing(0)
         self.pilha = QStackedWidget()
-        lay.addWidget(self.pilha, 1)
+        direita.addWidget(self.pilha, 1)
+        self.aviso = FaixaAviso()
+        direita.addWidget(self.aviso)
+        lay.addLayout(direita, 1)
+
         self.abertura = TelaAbertura(perfil or carregar_perfil(), fabrica_executor)
-        self.pilha.addWidget(self.abertura)
-        self.trilho.grupo.idClicked.connect(self.pilha.setCurrentIndex)
+        self.projeto = TelaProjeto(self.sessao)
+        self.execucoes = TelaExecucoes(self.sessao)
+        self.comparar = TelaComparar(self.sessao)
+        for tela in (self.abertura, self.projeto, self.execucoes, self.comparar):
+            self.pilha.addWidget(tela)
+
+        self.trilho.grupo.idClicked.connect(self.ir_para)
+        self.abertura.botao_novo.clicked.connect(self.projeto.novo_projeto)
+        self.abertura.botao_abrir.clicked.connect(self.projeto.abrir_pasta)
+        self.abertura.abrir_projeto.connect(self.sessao.abrir)
+        self.execucoes.lista.comparar.connect(self._comparar)
+        self.sessao.projeto_mudou.connect(self._projeto_mudou)
+        self.sessao.erro.connect(self.aviso.mostrar)
+        self.sessao.pedir_tela.connect(self._pedido_de_tela)
         self.setCentralWidget(raiz)
+
+        self.abertura.carregar_recentes()
         if verificar_ao_abrir:
             self.abertura.verificar()
+        if projeto_inicial is not None:
+            self.sessao.abrir(projeto_inicial)
+
+    def ir_para(self, indice: int) -> None:
+        self.pilha.setCurrentIndex(indice)
+        self.trilho.grupo.button(indice).setChecked(True)
+        if indice == ABERTURA:
+            self.abertura.carregar_recentes()
+
+    def _projeto_mudou(self, projeto) -> None:
+        self.trilho.projeto_aberto(projeto.nome if projeto else None)
+        self.setWindowTitle(f"{projeto.nome} — Axillares" if projeto else "Axillares")
+        self.ir_para(PROJETO)
+
+    def _comparar(self, a: str, b: str) -> None:
+        self.comparar.pedir(a, b)
+        self.ir_para(COMPARAR)
+
+    def _pedido_de_tela(self, nome: str, argumento: object) -> None:
+        if nome == "execucao":
+            self.execucoes.abrir(str(argumento))
+            self.ir_para(EXECUCOES)
 
     def closeEvent(self, evento: QCloseEvent) -> None:
         self.abertura.encerrar()
+        self.projeto.encerrar()
+        self.sessao.encerrar()
+        tarefas.esperar_todas()
         super().closeEvent(evento)
 
 

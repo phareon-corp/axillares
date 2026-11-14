@@ -14,7 +14,9 @@ from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
 
+from axillares.ambiente.abrir import abrir as abrir_visualizador
 from axillares.core import formato as fmt
+from axillares.core import recentes
 from axillares.core.caderno import Caderno, ErroCaderno, RegistroExecucao
 from axillares.core.comparacao import comparar
 from axillares.core.execucao import executar_etapa
@@ -46,9 +48,11 @@ def _erro(mensagem: str, codigo: int = 2) -> typer.Exit:
 
 def _projeto(pasta: Path | None) -> Projeto:
     try:
-        return carregar_projeto(pasta)
+        projeto = carregar_projeto(pasta)
     except ErroProjeto as erro:
         raise _erro(str(erro)) from erro
+    recentes.registrar(projeto.raiz, projeto.nome)
+    return projeto
 
 
 # --- novo ---------------------------------------------------------------------------------
@@ -63,6 +67,7 @@ def novo(
         pasta = criar_projeto(nome, em)
     except ErroProjeto as erro:
         raise _erro(str(erro)) from erro
+    recentes.registrar(pasta, nome)
     console.print(f"[green]✓[/] Projeto [bold]{nome}[/] criado em {pasta}")
     console.print(f"  [dim]próximo passo:[/] cd {pasta} && axil executar sintese")
 
@@ -301,3 +306,31 @@ def comparar_cmd(
         )  # fmt: skip
     console.print(t)
     console.print("[dim]verde: melhorou de A para B · vermelho: piorou[/]")
+
+
+# --- abrir --------------------------------------------------------------------------------
+
+
+def abrir(
+    referencia: str = typer.Argument("ultima", help="Execução: número, prefixo, ultima…"),
+    pasta: Path | None = OpcaoProjeto,
+) -> None:
+    """Abre o GDS de uma execução no KLayout."""
+    projeto = _projeto(pasta)
+    try:
+        r = Caderno(projeto.dir_runs).resolver(referencia)
+    except ErroCaderno as erro:
+        raise _erro(str(erro)) from erro
+    gds = next((a for a in r.artefatos if a.tipo is TipoArtefato.GDS), None)
+    if gds is None or r.diretorio is None:
+        raise _erro(
+            f"A execução #{r.numero} ({r.etapa.value}, {fmt.ROTULO_SITUACAO[r.situacao]}) não tem "
+            "GDS. Só a etapa gds bem-sucedida produz um."
+        )
+    from axillares.cli.ambiente import painel_diagnostico
+
+    diag = abrir_visualizador(r.diretorio / gds.caminho, "gds")
+    if diag is not None:
+        console.print(painel_diagnostico(diag))
+        raise typer.Exit(1)
+    console.print(f"[green]✓[/] Abrindo {gds.nome} da execução #{r.numero} no KLayout.")

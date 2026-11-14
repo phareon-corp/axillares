@@ -92,3 +92,40 @@ QToolTip {
     background: ${fundo_3}; color: ${tinta}; border: 1px solid ${linha_forte};
     padding: 6px 8px; font-family: "${fam_corpo}"; font-size: 12px;
 }
+
+/* ---- campos ----------------------------------------------------------------------------- */
+QDialog { background: ${fundo}; }
+QLineEdit {
+    background: ${fundo_2}; color: ${tinta}; border: 1px solid ${linha_forte};
+    border-radius: ${raio_s}px; padding: 9px 12px; selection-background-color: ${acento};
+}
+QLineEdit:focus { border: 1px solid ${acento}; }
+QLineEdit[erro="sim"] { border: 1px solid ${falha}; }
+
+QComboBox {
+    background: ${fundo_2}; color: ${tinta}; border: 1px solid ${linha_forte};
+    border-radius: ${raio_s}px; padding: 8px 12px; min-width: 120px;
+}
+QComboBox:hover { border-color: ${tinta_3}; }
+QComboBox:focus { border-color: ${acento}; }
+QComboBox::drop-down { border: none; width: 24px; }
+QComboBox QAbstractItemView {
+    background: ${fundo_2}; color: ${tinta}; border: 1px solid ${linha_forte};
+    selection-background-color: ${fundo_3}; selection-color: ${tinta}; outline: none; padding: 4px;
+}
+
+QCheckBox { spacing: 8px; color: ${tinta_2}; }
+QCheckBox::indicator {
+    width: 14px; height: 14px; border: 1px solid ${linha_forte}; border-radius: 3px;
+    background: transparent;
+}
+QCheckBox::indicator:hover { border-color: ${tinta_2}; }
+QCheckBox::indicator:checked { background: ${acento}; border-color: ${acento}; }
+
+QFrame[tipo="linha-tabela"][selecionavel="sim"]:hover { background: ${fundo_2}; }
+QFrame[tipo="painel-execucao"] {
+    background: ${fundo_2}; border: 1px solid ${linha}; border-left: 2px solid ${acento};
+    border-radius: ${raio_s}px;
+}
+QFrame[tipo="cartao-etapa"] { background: ${fundo}; }
+QFrame[tipo="cartao-etapa"]:hover { background: ${fundo_3}; }
