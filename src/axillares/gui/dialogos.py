@@ -34,6 +34,20 @@ PDKS = (
 _NOME = re.compile(r"^[A-Za-z_][A-Za-z0-9_\-]*$")
 
 
+def _ocupada(pasta: Path) -> bool:
+    return pasta.exists() and (not pasta.is_dir() or any(pasta.iterdir()))
+
+
+def nome_livre(destino: Path, base: str) -> str:
+    """meu-chip, meu-chip-2, meu-chip-3… o primeiro que não colide com uma pasta com conteúdo."""
+    if not _ocupada(destino / base):
+        return base
+    n = 2
+    while _ocupada(destino / f"{base}-{n}"):
+        n += 1
+    return f"{base}-{n}"
+
+
 class _Responsivo(QWidget):
     """Avisa a própria largura a cada redimensionamento."""
 
@@ -128,13 +142,14 @@ class DialogoNovoProjeto(QDialog):
         campos.setVerticalSpacing(6)
         campos.addWidget(rotulo("Nome", Papel.ROTULO, "3"), 0, 0)
         campos.addWidget(rotulo("Criar dentro de", Papel.ROTULO, "3"), 0, 1)
-        self.nome = QLineEdit("meu-chip")
+        self.nome = QLineEdit(nome_livre(Path.home() / "Projetos", "meu-chip"))
         self.nome.setFont(t.fonte(Papel.CORPO))
         self.nome.textChanged.connect(self._validar)
         campos.addWidget(self.nome, 1, 0)
         pasta = QHBoxLayout()
         self.destino = QLineEdit(str(Path.home() / "Projetos"))
         self.destino.setFont(t.fonte(Papel.MONO))
+        self.destino.textChanged.connect(self._validar)
         escolher = botao("Escolher…", "compacto")
         escolher.clicked.connect(self._escolher_pasta)
         pasta.addWidget(self.destino, 1)
@@ -159,6 +174,7 @@ class DialogoNovoProjeto(QDialog):
         lay.addLayout(campos)
 
         self.aviso = rotulo("", Papel.PEQUENO, "falha")
+        self.aviso.setWordWrap(True)
         lay.addWidget(self.aviso)
         acoes = QHBoxLayout()
         acoes.addStretch(1)
@@ -194,12 +210,21 @@ class DialogoNovoProjeto(QDialog):
             self.destino.setText(pasta)
 
     def _validar(self) -> None:
+        """Erros aparecem aqui, antes de criar — nunca depois que o diálogo fechou."""
         nome = self.nome.text().strip()
-        ok = bool(_NOME.match(nome))
-        self.aviso.setText("" if ok else "Use letras, números, _ ou -, começando por letra.")
-        self.nome.setProperty("erro", "nao" if ok else "sim")
+        destino = Path(self.destino.text().strip()).expanduser()
+        problema = ""
+        if not _NOME.match(nome):
+            problema = "Use letras, números, _ ou -, começando por letra."
+        elif _ocupada(destino / nome):
+            livre = nome_livre(destino, nome)
+            problema = f"Já existe uma pasta “{nome}” em {destino}. Que tal “{livre}”?"
+        elif destino.exists() and not destino.is_dir():
+            problema = f"{destino} não é uma pasta."
+        self.aviso.setText(problema)
+        self.nome.setProperty("erro", "sim" if problema else "nao")
         repolir(self.nome)
-        self.criar.setEnabled(ok)
+        self.criar.setEnabled(not problema)
 
     def escolhas(self) -> dict:
         return {

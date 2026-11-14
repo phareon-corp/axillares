@@ -7,6 +7,7 @@ dois projetos em paralelo e comparar layouts de projetos diferentes lado a lado.
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -19,10 +20,22 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from axillares.core import recentes
 from axillares.core.caderno import Caderno
 from axillares.core.projeto import Projeto
+from axillares.gui import tarefas
 from axillares.gui import tema as t
-from axillares.gui.componentes import Ponto, botao, repolir, rotulo
+from axillares.gui.componentes import (
+    NumeroSecao,
+    Ponto,
+    Tabela,
+    botao,
+    cabecalho_tela,
+    layout_de_tela,
+    repolir,
+    rotulo,
+    tela_rolavel,
+)
 from axillares.gui.sessao import Sessao
 from axillares.gui.telas.comparar import TelaComparar
 from axillares.gui.telas.editor import TelaEditor
@@ -94,6 +107,67 @@ class AreaProjeto(QWidget):
     def encerrar(self) -> None:
         self.layout_.encerrar()
         self.sessao.encerrar()
+
+
+class TelaSemProjeto(QWidget):
+    """O que "Projeto" mostra quando nenhum projeto está aberto: criar, abrir ou retomar."""
+
+    novo = Signal()
+    abrir = Signal()
+    abrir_recente = Signal(object)
+
+    def __init__(self) -> None:
+        super().__init__()
+        w = QWidget()
+        lay = layout_de_tela(w)
+        cab, _ = cabecalho_tela(
+            "Projeto",
+            f"Nenhum projeto {t.serifa('aberto', tamanho_px=54)} ainda.",
+            "Crie um a partir de um modelo — em branco, portas lógicas, contador ou semáforo — "
+            "ou abra uma pasta que já tenha um axil.toml. Vários projetos podem ficar abertos "
+            "ao mesmo tempo, cada um na sua aba.",
+        )
+        lay.addLayout(cab)
+        acoes = QHBoxLayout()
+        acoes.setSpacing(Espaco.S + 2)
+        novo = botao("Novo projeto  +", "primario")
+        novo.clicked.connect(self.novo)
+        abrir = botao("Abrir pasta…", "fantasma")
+        abrir.clicked.connect(self.abrir)
+        acoes.addWidget(novo)
+        acoes.addWidget(abrir)
+        acoes.addStretch(1)
+        lay.addLayout(acoes)
+        lay.addWidget(NumeroSecao("01", "Recentes"))
+        self.recentes = Tabela(
+            [("projeto", 3, "e"), ("pasta", 6, "e"), ("aberto", 2, "d")],
+            [Papel.CORPO_FORTE, Papel.MONO, Papel.MONO],
+        )
+        lay.addWidget(self.recentes)
+        lay.addStretch(1)
+        externo = QVBoxLayout(self)
+        externo.setContentsMargins(0, 0, 0, 0)
+        externo.addWidget(tela_rolavel(w))
+        self._tarefa = None
+
+    def carregar(self) -> None:
+        self._tarefa = tarefas.em_segundo_plano(recentes.listar, self)
+        self._tarefa.concluido.connect(self._mostrar)
+        self._tarefa.iniciar()
+
+    def _mostrar(self, lista: list[dict]) -> None:
+        self.recentes.limpar()
+        if not lista:
+            self.recentes.mostrar_vazio("Nenhum projeto recente.")
+            return
+        casa = str(Path.home())
+        for item in lista:
+            quando = item.get("aberto_em", "")[:16].replace("T", " ")
+            self.recentes.adicionar(
+                [item["nome"], item["caminho"].replace(casa, "~", 1), quando[5:]],
+                ao_clicar=lambda c=item["caminho"]: self.abrir_recente.emit(Path(c)),
+                tons=[None, "2", "3"],
+            )
 
 
 class AbaProjeto(QFrame):
@@ -209,5 +283,6 @@ __all__ = [
     "PROJETO",
     "AreaProjeto",
     "BarraProjetos",
+    "TelaSemProjeto",
     "t",
 ]

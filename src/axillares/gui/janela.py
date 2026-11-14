@@ -41,6 +41,7 @@ from axillares.gui.espaco import (
     AbaProjeto,
     AreaProjeto,
     BarraProjetos,
+    TelaSemProjeto,
 )
 from axillares.gui.telas.abertura import TelaAbertura
 from axillares.gui.tema import Espaco, Modo, Papel
@@ -245,6 +246,11 @@ class JanelaPrincipal(QMainWindow):
 
         self.abertura = TelaAbertura(perfil or carregar_perfil(), fabrica_executor)
         self.pilha.addWidget(self.abertura)
+        self.sem_projeto = TelaSemProjeto()
+        self.sem_projeto.novo.connect(self.novo_projeto)
+        self.sem_projeto.abrir.connect(self.escolher_pasta)
+        self.sem_projeto.abrir_recente.connect(self.abrir_projeto)
+        self.pilha.addWidget(self.sem_projeto)
         self.trilho.grupo.idClicked.connect(self.ir_para)
         self.abertura.botao_novo.clicked.connect(self.novo_projeto)
         self.abertura.botao_abrir.clicked.connect(self.escolher_pasta)
@@ -426,7 +432,13 @@ class JanelaPrincipal(QMainWindow):
 
     def ir_para(self, indice: int) -> None:
         if indice != ABERTURA and self.ativa is None:
-            indice = ABERTURA
+            # sem projeto aberto: "Projeto" explica e oferece criar, abrir ou retomar
+            self.indice = PROJETO
+            self._ajustar_trilho()
+            self.trilho.grupo.button(PROJETO).setChecked(True)
+            self.pilha.setCurrentWidget(self.sem_projeto)
+            self.sem_projeto.carregar()
+            return
         self.indice = indice
         self._ajustar_trilho()
         self.trilho.grupo.button(indice).setChecked(True)
