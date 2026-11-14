@@ -159,6 +159,20 @@ class RenderizadorLayout:
         return Imagem(arquivo, tuple(resposta["caixa"]), resposta["largura"],
                       resposta["altura"], resposta["id"])  # fmt: skip
 
+    def inspecionar(self, x: float, y: float, raio: float = 0.05) -> dict:
+        """Células e formas no ponto (µm), segundo o KLayout."""
+        self.iniciar()
+        with self._trava:
+            assert self._processo is not None and self._processo.stdin is not None
+            self._contador += 1
+            pedido = {"op": "inspecionar", "id": self._contador, "x": x, "y": y, "raio": raio}
+            self._processo.stdin.write(json.dumps(pedido) + "\n")
+            self._processo.stdin.flush()
+            resposta = self._ler_resposta()
+        if resposta.get("op") == "erro":
+            raise ErroMotor(f"O KLayout não conseguiu inspecionar: {resposta.get('mensagem')}")
+        return resposta
+
     def encerrar(self) -> None:
         with self._trava:
             processo, self._processo = self._processo, None

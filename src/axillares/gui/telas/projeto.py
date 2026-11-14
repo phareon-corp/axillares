@@ -13,13 +13,13 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
-    QLineEdit,
     QPlainTextEdit,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from axillares.core import explicacoes as ex
 from axillares.core import formato as fmt
 from axillares.core.caderno import RegistroExecucao
 from axillares.core.modelos import Etapa, Situacao, TipoArtefato
@@ -39,7 +39,9 @@ from axillares.gui.componentes import (
     tela_rolavel,
     tom_da_situacao,
 )
+from axillares.gui.dialogos import DialogoNovoProjeto
 from axillares.gui.sessao import Sessao
+from axillares.gui.telas.fluxo import FluxoExplicado
 from axillares.gui.tema import Espaco, Papel
 
 TITULOS_ETAPA = {Etapa.SINTESE: "Síntese", Etapa.GDS: "Do RTL ao GDS"}
@@ -47,55 +49,6 @@ LIMITE_LOG = 4000
 
 
 # --- diálogo de projeto novo ------------------------------------------------------------------
-
-
-class DialogoNovoProjeto(QDialog):
-    def __init__(self, pai: QWidget | None = None) -> None:
-        super().__init__(pai)
-        self.setWindowTitle("Novo projeto")
-        self.setMinimumWidth(520)
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(Espaco.XL, Espaco.XL, Espaco.XL, Espaco.L)
-        lay.setSpacing(Espaco.M)
-        lay.addWidget(rotulo("Novo projeto", Papel.TITULO))
-        explicacao = rotulo(
-            "Cria uma pasta com o exemplo do contador de 8 bits: RTL, restrições, testbench e "
-            "axil.toml, prontos para o fluxo.",
-            Papel.PEQUENO,
-            "2",
-        )
-        explicacao.setWordWrap(True)
-        lay.addWidget(explicacao)
-        lay.addSpacing(Espaco.S)
-        lay.addWidget(rotulo("Nome", Papel.ROTULO, "3"))
-        self.nome = QLineEdit("meu-chip")
-        self.nome.setFont(t.fonte(Papel.CORPO))
-        lay.addWidget(self.nome)
-        lay.addWidget(rotulo("Criar dentro de", Papel.ROTULO, "3"))
-        linha = QHBoxLayout()
-        self.destino = QLineEdit(str(Path.home() / "Projetos"))
-        self.destino.setFont(t.fonte(Papel.MONO))
-        escolher = botao("Escolher…", "fantasma")
-        escolher.clicked.connect(self._escolher)
-        linha.addWidget(self.destino, 1)
-        linha.addWidget(escolher)
-        lay.addLayout(linha)
-        lay.addSpacing(Espaco.M)
-        acoes = QHBoxLayout()
-        acoes.addStretch(1)
-        cancelar = botao("Cancelar", "fantasma")
-        cancelar.clicked.connect(self.reject)
-        criar = botao("Criar projeto", "primario")
-        criar.setDefault(True)
-        criar.clicked.connect(self.accept)
-        acoes.addWidget(cancelar)
-        acoes.addWidget(criar)
-        lay.addLayout(acoes)
-
-    def _escolher(self) -> None:
-        pasta = QFileDialog.getExistingDirectory(self, "Criar dentro de", self.destino.text())
-        if pasta:
-            self.destino.setText(pasta)
 
 
 # --- execução ao vivo -------------------------------------------------------------------------
@@ -131,6 +84,11 @@ class PainelExecucao(QFrame):
         self.cancelar = botao("Cancelar", "fantasma")
         topo.addWidget(self.cancelar, 0, Qt.AlignmentFlag.AlignVCenter)
         lay.addLayout(topo)
+
+        self.explicacao = rotulo("", Papel.CORPO, "2")
+        self.explicacao.setWordWrap(True)
+        self.explicacao.setMaximumWidth(760)
+        lay.addWidget(self.explicacao)
 
         self.trilha = rotulo("", Papel.ETIQUETA, "2", rico=True)
         self.trilha.setWordWrap(True)
@@ -179,6 +137,8 @@ class PainelExecucao(QFrame):
         self.passo.setText("preparando…")
         self.relogio.setText("0,0 s")
         self.log.clear()
+        self.explicacao.setText("Preparando o contêiner com as ferramentas…")
+        self.explicacao.show()
         self._passos = []
         self.trilha.setText("")
         self.resumo.hide()
@@ -276,9 +236,12 @@ class CartaoEtapa(QFrame):
         lay.setSpacing(Espaco.S + 2)
         lay.addWidget(rotulo(f"{numero} / {etapa.value}", Papel.NUMERO_SECAO, "acento"))
         lay.addWidget(rotulo(TITULOS_ETAPA[etapa], Papel.TITULO))
-        desc = rotulo(etapa.descricao[0].upper() + etapa.descricao[1:] + ".", Papel.PEQUENO, "2")
+        resumo = ex.etapa(etapa)
+        desc = rotulo(resumo.resumo, Papel.PEQUENO, "2")
         desc.setWordWrap(True)
         lay.addWidget(desc)
+        n = len(resumo.passos)
+        lay.addWidget(rotulo(f"{n} passos — veja abaixo como funciona cada um", Papel.ROTULO, "3"))
         self.ultima = rotulo("Ainda não executada.", Papel.MONO, "3")
         self.ultima.setWordWrap(True)
         lay.addWidget(self.ultima)
@@ -303,7 +266,7 @@ class TelaProjeto(QWidget):
         sessao.projeto_mudou.connect(self.mostrar)
         sessao.execucoes_mudaram.connect(self._atualizar_ultimas)
         sessao.execucao_iniciada.connect(self._iniciada)
-        sessao.execucao_linha.connect(self.painel.receber)
+        sessao.execucao_linha.connect(self._linha)
         sessao.execucao_concluida.connect(self._concluida)
 
     # --- montagem -----------------------------------------------------------------------------
@@ -382,7 +345,22 @@ class TelaProjeto(QWidget):
             etapas.addWidget(c, 1)
         lay.addWidget(caixa)
 
-        self.secao_execucao = NumeroSecao("02", "Execução")
+        lay.addWidget(NumeroSecao("02", "Como funciona", "CLIQUE NUM PASSO PARA DETALHES"))
+        intro = rotulo(
+            "Um chip sai do seu Verilog em passos. Cada passo é uma ferramenta aberta, chamada "
+            "pelo "
+            "SiliconCompiler dentro da imagem de ferramentas. Durante uma execução, o passo atual "
+            "acende aqui.",
+            Papel.CORPO,
+            "2",
+        )
+        intro.setWordWrap(True)
+        intro.setMaximumWidth(760)
+        lay.addWidget(intro)
+        self.fluxo = FluxoExplicado()
+        lay.addWidget(self.fluxo)
+
+        self.secao_execucao = NumeroSecao("03", "Execução")
         lay.addWidget(self.secao_execucao)
         self.painel = PainelExecucao(self)
         self.painel.cancelar.clicked.connect(self.cancelar)
@@ -400,7 +378,8 @@ class TelaProjeto(QWidget):
     def novo_projeto(self) -> None:
         dialogo = DialogoNovoProjeto(self)
         if dialogo.exec() == QDialog.DialogCode.Accepted:
-            self.sessao.criar(dialogo.nome.text().strip(), Path(dialogo.destino.text()))
+            e = dialogo.escolhas()
+            self.sessao.criar(e["nome"], e["destino"], e["modelo"], e["pdk"], e["frequencia_mhz"])
 
     def abrir_pasta(self) -> None:
         inicio = str(self.sessao.projeto.raiz) if self.sessao.projeto else str(Path.home())
@@ -421,7 +400,15 @@ class TelaProjeto(QWidget):
         for c in self.cartoes.values():
             c.botao.setEnabled(False)
         self.secao_execucao.show()
+        self.fluxo.comecar(etapa)
         self.painel.comecar(etapa, nome_motor)
+
+    def _linha(self, linha: str, passo: str | None) -> None:
+        self.painel.receber(linha, passo)
+        if passo:
+            explicado = self.fluxo.avancar(passo.split(" · ")[-1])
+            if explicado is not None:
+                self.painel.explicacao.setText(f"Agora — {explicado.titulo}: {explicado.o_que}")
 
     def cancelar(self) -> None:
         if self.sessao.executando:
@@ -434,6 +421,21 @@ class TelaProjeto(QWidget):
         for c in self.cartoes.values():
             c.botao.setEnabled(True)
         self.painel.terminar(registro)
+        self.fluxo.terminar(registro.situacao is Situacao.SUCESSO)
+        if registro.situacao is Situacao.SUCESSO:
+            self.painel.explicacao.setText(
+                "Pronto. Veja as métricas abaixo; em Execuções cada uma é explicada, e em Layout "
+                "você vê o chip desenhado."
+                if registro.etapa is Etapa.GDS
+                else "Pronto. A netlist está em Execuções; a etapa GDS continua daqui até o chip."
+            )
+        else:
+            self.painel.explicacao.hide()
+
+    def mostrar_fluxo(self) -> None:
+        """Rola até a seção "Como funciona"."""
+        rolagem = self.pilha.widget(1)
+        QTimer.singleShot(50, lambda: rolagem.ensureWidgetVisible(self.fluxo, 0, 120))
 
     @property
     def executando(self) -> bool:

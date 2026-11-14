@@ -60,16 +60,34 @@ def _projeto(pasta: Path | None) -> Projeto:
 
 def novo(
     nome: str = typer.Argument(..., help="Nome do projeto (vira o nome da pasta)."),
+    modelo: str = typer.Option("vazio", "--modelo", "-m", help="Veja as opções com: axil modelos"),
+    pdk: str = typer.Option("skywater130", "--pdk", help="skywater130, gf180 ou ihp130."),
+    frequencia: float = typer.Option(100.0, "--frequencia", "-f", help="Relógio alvo, em MHz."),
     em: Path = typer.Option(Path("."), "--em", help="Pasta onde criar o projeto."),
 ) -> None:
-    """Cria um projeto a partir do exemplo (um contador de 8 bits pronto para o fluxo)."""
+    """Cria um projeto a partir de um modelo (em branco, portas, contador, semáforo)."""
     try:
-        pasta = criar_projeto(nome, em)
+        pasta = criar_projeto(nome, em, modelo, pdk, frequencia)
     except ErroProjeto as erro:
         raise _erro(str(erro)) from erro
     recentes.registrar(pasta, nome)
-    console.print(f"[green]✓[/] Projeto [bold]{nome}[/] criado em {pasta}")
+    console.print(
+        f"[green]✓[/] Projeto [bold]{nome}[/] criado em {pasta} [dim](modelo {modelo})[/]"
+    )
     console.print(f"  [dim]próximo passo:[/] cd {pasta} && axil executar sintese")
+
+
+def modelos_cmd() -> None:
+    """Lista os modelos de projeto disponíveis para `axil novo --modelo`."""
+    from axillares.core.novo import modelos
+
+    t = Table(header_style="dim", border_style="grey30", box=None, padding=(0, 2))
+    t.add_column("MODELO", style="bold", no_wrap=True)
+    t.add_column("NÍVEL", style="dim", no_wrap=True)
+    t.add_column("O QUE É")
+    for m in modelos():
+        t.add_row(m.id, m.nivel, f"[bold]{m.titulo}[/] — {m.descricao}")
+    console.print(t)
 
 
 # --- executar -----------------------------------------------------------------------------

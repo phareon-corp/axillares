@@ -61,10 +61,12 @@ class Trilho(QFrame):
         marca.setContentsMargins(Espaco.M + 2, 0, Espaco.M, 0)
         marca.setSpacing(6)
         marca.addWidget(Ponto(8, "acento", pulsar=True))
-        marca.addWidget(rotulo("Axillares", Papel.MARCA))
+        self._nome_marca = rotulo("Axillares", Papel.MARCA)
+        marca.addWidget(self._nome_marca)
         marca.addStretch(1)
         lay.addLayout(marca)
         sub = rotulo("Do Verilog ao GDSII", Papel.ROTULO, "3")
+        self._expandidos: list[QWidget] = [self._nome_marca, sub]
         sub.setContentsMargins(Espaco.M + 2 + 30, 2, 0, 0)
         lay.addWidget(sub)
         lay.addSpacing(Espaco.XL)
@@ -74,6 +76,8 @@ class Trilho(QFrame):
         self._precisam_projeto: list[QPushButton] = []
         for i, (numero, nome, precisa) in enumerate(SECOES):
             b = QPushButton(f"{numero}   {nome}")
+            b.setProperty("rotulo_completo", f"{numero}   {nome}")
+            b.setProperty("rotulo_curto", numero)
             b.setProperty("tipo", "nav")
             b.setFont(t.fonte(Papel.NAV))
             b.setCheckable(True)
@@ -92,6 +96,7 @@ class Trilho(QFrame):
         self.projeto.setWordWrap(True)
         lay.addWidget(self.projeto)
         breve = rotulo("07   Trilha · em breve", Papel.ROTULO, "3")
+        self._expandidos += [self.projeto, breve]
         breve.setContentsMargins(Espaco.M + 2, Espaco.M, Espaco.M, 0)
         lay.addWidget(breve)
 
@@ -123,6 +128,26 @@ class Trilho(QFrame):
         caixa.addSpacing(Espaco.S)
         caixa.addWidget(rotulo(f"v {__version__} · Apache-2.0", Papel.ROTULO, "3"))
         lay.addLayout(caixa)
+        self._caixa_tema = caixa
+
+    def compactar(self, sim: bool) -> None:
+        """Rail compacto (só os números): devolve espaço ao editor e ao layout."""
+        self.setFixedWidth(64 if sim else Espaco.TRILHO)
+        for w in self._expandidos:
+            w.setVisible(not sim)
+        for i in range(self._caixa_tema.count()):
+            item = self._caixa_tema.itemAt(i)
+            alvo = item.widget() or item.layout()
+            if isinstance(alvo, QWidget):
+                alvo.setVisible(not sim)
+            elif alvo is not None:
+                for j in range(alvo.count()):
+                    w = alvo.itemAt(j).widget()
+                    if w:
+                        w.setVisible(not sim)
+        for b in self.grupo.buttons():
+            b.setText(b.property("rotulo_curto" if sim else "rotulo_completo"))
+            b.setToolTip(b.property("rotulo_completo").split("   ")[-1] if sim else "")
 
     def _sincronizar_modo(self, _paleta: object) -> None:
         indice = (Modo.ESCURO, Modo.CLARO, Modo.SISTEMA).index(t.tema().modo)
@@ -229,6 +254,7 @@ class JanelaPrincipal(QMainWindow):
             self.sessao.abrir(projeto_inicial)
 
     def ir_para(self, indice: int) -> None:
+        self.trilho.compactar(indice in (EDITOR, LAYOUT))
         self.pilha.setCurrentIndex(indice)
         self.trilho.grupo.button(indice).setChecked(True)
         if indice == ABERTURA:
@@ -253,6 +279,9 @@ class JanelaPrincipal(QMainWindow):
         if nome == "execucao":
             self.execucoes.abrir(str(argumento))
             self.ir_para(EXECUCOES)
+        elif nome == "como-funciona":
+            self.ir_para(PROJETO)
+            self.projeto.mostrar_fluxo()
         elif nome == "layout":
             self.layout_.mostrar_execucao(str(argumento))
             self.ir_para(LAYOUT)

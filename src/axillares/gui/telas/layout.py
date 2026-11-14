@@ -17,10 +17,12 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QScrollArea,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from axillares.core import explicacoes as ex
 from axillares.core import formato as fmt
 from axillares.core.caderno import RegistroExecucao
 from axillares.core.modelos import Etapa, Situacao, TipoArtefato
@@ -28,6 +30,7 @@ from axillares.gui import tarefas
 from axillares.gui import tema as t
 from axillares.gui.componentes import Eyebrow, botao, rotulo
 from axillares.gui.sessao import Sessao
+from axillares.gui.telas.execucoes import _segmentos
 from axillares.gui.tema import Espaco, Papel
 
 Caixa = tuple[float, float, float, float]
@@ -39,6 +42,7 @@ class Prancheta(QWidget):
 
     vista_mudou = Signal()
     cursor_um = Signal(float, float)
+    clique_um = Signal(float, float)
 
     def __init__(self) -> None:
         super().__init__()
@@ -51,6 +55,8 @@ class Prancheta(QWidget):
         self._imagem: QPixmap | None = None
         self._caixa_imagem: Caixa | None = None
         self._arrasto: QPointF | None = None
+        self._inicio_clique: QPointF | None = None
+        self.destaque: Caixa | None = None
         t.tema().mudou.connect(lambda _p: self.update())
 
     # --- geometria ----------------------------------------------------------------------------
@@ -102,6 +108,17 @@ class Prancheta(QWidget):
             )
             p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             p.drawPixmap(alvo, self._imagem, QRectF(self._imagem.rect()))
+        if self.destaque is not None:
+            x1, _y1, _x2, y2 = self.caixa()
+            dx1, dy1, dx2, dy2 = self.destaque
+            r = QRectF((dx1 - x1) / self.escala, (y2 - dy2) / self.escala,
+                       (dx2 - dx1) / self.escala, (dy2 - dy1) / self.escala)  # fmt: skip
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            halo = pal.qcolor("acento")
+            halo.setAlphaF(0.18)
+            p.fillRect(r, halo)
+            p.setPen(QPen(pal.qcolor("acento"), 2))
+            p.drawRect(r)
         self._regua(p)
 
     def _regua(self, p: QPainter) -> None:
@@ -146,6 +163,7 @@ class Prancheta(QWidget):
     def mousePressEvent(self, evento: QMouseEvent) -> None:
         if evento.button() in (Qt.MouseButton.LeftButton, Qt.MouseButton.MiddleButton):
             self._arrasto = evento.position()
+            self._inicio_clique = evento.position()
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
 
     def mouseMoveEvent(self, evento: QMouseEvent) -> None:
@@ -161,9 +179,17 @@ class Prancheta(QWidget):
         um = self.para_um(evento.position())
         self.cursor_um.emit(um.x(), um.y())
 
-    def mouseReleaseEvent(self, _evento: QMouseEvent) -> None:
+    def mouseReleaseEvent(self, evento: QMouseEvent) -> None:
+        inicio, self._inicio_clique = self._inicio_clique, None
         self._arrasto = None
         self.setCursor(Qt.CursorShape.CrossCursor)
+        if (
+            inicio is not None
+            and evento.button() == Qt.MouseButton.LeftButton
+            and (evento.position() - inicio).manhattanLength() < 4
+        ):
+            um = self.para_um(evento.position())
+            self.clique_um.emit(um.x(), um.y())
 
     def mouseDoubleClickEvent(self, _evento: QMouseEvent) -> None:
         self.enquadrar()
@@ -176,11 +202,45 @@ class Prancheta(QWidget):
             self.vista_mudou.emit()
 
 
+COMO_FOI_FEITO = (
+    (
+        "1 · Floorplan",
+        "Definiu o contorno do chip, as linhas onde as células moram e a malha de "
+        "alimentação: as faixas largas de metal 4 e 5 e os trilhos de metal 1 em cada linha.",
+        "Alimentação",
+    ),
+    (
+        "2 · Posicionamento",
+        "Pôs cada célula padrão numa linha. Cada retângulo pequeno é uma célula "
+        "inteira, desenhada pelo fabricante do PDK — flip-flops, portas, preenchimento.",
+        "Células",
+    ),
+    (
+        "3 · Árvore de relógio",
+        "Inseriu buffers de relógio (clkbuf) e preencheu os vãos com células "
+        "fill e decap. Clique numa célula para ver o que ela é.",
+        None,
+    ),
+    (
+        "4 · Roteamento",
+        "Desenhou os fios de sinal em metal 1 a 3 e as vias entre eles, ligando os "
+        "pinos das células como a netlist manda.",
+        "Fios de sinal",
+    ),
+    (
+        "5 · Escrita do GDS",
+        "Juntou tudo num arquivo só, camada por camada — o que você vê aqui.",
+        None,
+    ),
+)
+
+
 class LinhaCamada(QWidget):
     """Uma camada: a amostra é a própria cor do PDK — cheia quando visível, vazada quando oculta.
     (Caixas de seleção laranja aqui estourariam o orçamento de sinal da Phareon.)"""
 
     alternada = Signal(int, bool)
+    isolada = Signal(int)
 
     def __init__(self, indice: int, nome: str, cor: str, dica: str) -> None:
         super().__init__()
@@ -193,6 +253,7 @@ class LinhaCamada(QWidget):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(22, 0, 4, 0)
         self.nome = rotulo(nome, Papel.PEQUENO)
+        self.nome_camada = nome
         lay.addWidget(self.nome)
 
     def definir(self, visivel: bool) -> None:
@@ -262,6 +323,7 @@ class TelaLayout(QWidget):
         self.prancheta = Prancheta()
         self.prancheta.vista_mudou.connect(self._agendar)
         self.prancheta.cursor_um.connect(self._mostrar_cursor)
+        self.prancheta.clique_um.connect(self._inspecionar)
         centro.addWidget(self.prancheta, 1)
 
         estado = QFrame()
@@ -282,34 +344,98 @@ class TelaLayout(QWidget):
 
         lateral = QFrame()
         lateral.setProperty("tipo", "lateral-editor")
-        lateral.setFixedWidth(250)
+        lateral.setFixedWidth(310)
         ll = QVBoxLayout(lateral)
         ll.setContentsMargins(Espaco.M + 2, Espaco.L, Espaco.M, Espaco.M)
         ll.setSpacing(Espaco.S)
-        ll.addWidget(rotulo("Camadas", Papel.ROTULO, "3"))
         self.nome_celula = rotulo("", Papel.TITULO)
+        ll.addWidget(rotulo("Célula de topo", Papel.ROTULO, "3"))
         ll.addWidget(self.nome_celula)
-        acoes = QHBoxLayout()
-        todas = botao("Todas", "link")
-        todas.setFont(t.fonte(Papel.ETIQUETA))
-        todas.clicked.connect(lambda: self._todas(True))
-        nenhuma = botao("Nenhuma", "link")
-        nenhuma.setFont(t.fonte(Papel.ETIQUETA))
-        nenhuma.clicked.connect(lambda: self._todas(False))
-        acoes.addWidget(todas)
-        acoes.addWidget(nenhuma)
-        acoes.addStretch(1)
-        ll.addLayout(acoes)
+        abas, self._grupo_abas = _segmentos(
+            [("Camadas", 0), ("Inspetor", 1), ("Como foi feito", 2)], self._trocar_aba
+        )
+        ll.addLayout(abas)
+        self.paginas = QStackedWidget()
+        ll.addWidget(self.paginas, 1)
+
+        # 0 — camadas
+        pagina = QWidget()
+        pl = QVBoxLayout(pagina)
+        pl.setContentsMargins(0, Espaco.S, 0, 0)
+        pl.setSpacing(Espaco.S)
+        filtros, self._grupo_filtros = _segmentos(
+            [("Tudo", None), ("Células", "Células"), ("Fios", "Fios de sinal"),
+             ("Alimentação", "Alimentação")], self._filtrar,
+        )  # fmt: skip
+        pl.addLayout(filtros)
+        dica = rotulo("clique: liga/desliga · duplo clique: só esta", Papel.ROTULO, "3")
+        dica.setWordWrap(True)
+        pl.addWidget(dica)
         rolagem = QScrollArea()
         rolagem.setWidgetResizable(True)
         rolagem.setFrameShape(QFrame.Shape.NoFrame)
+        rolagem.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._lista = QWidget()
         self._lay_camadas = QVBoxLayout(self._lista)
         self._lay_camadas.setContentsMargins(0, 0, 0, 0)
         self._lay_camadas.setSpacing(2)
         self._lay_camadas.addStretch(1)
         rolagem.setWidget(self._lista)
-        ll.addWidget(rolagem, 1)
+        pl.addWidget(rolagem, 1)
+        self.sobre_camada = rotulo("", Papel.PEQUENO, "2")
+        self.sobre_camada.setWordWrap(True)
+        pl.addWidget(self.sobre_camada)
+        self.paginas.addWidget(pagina)
+
+        # 1 — inspetor
+        pagina = QWidget()
+        il = QVBoxLayout(pagina)
+        il.setContentsMargins(0, Espaco.S, 0, 0)
+        il.setSpacing(Espaco.S)
+        rol = QScrollArea()
+        rol.setWidgetResizable(True)
+        rol.setFrameShape(QFrame.Shape.NoFrame)
+        rol.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        corpo = QWidget()
+        self._lay_inspetor = QVBoxLayout(corpo)
+        self._lay_inspetor.setContentsMargins(0, 0, 0, 0)
+        self._lay_inspetor.setSpacing(6)
+        self._lay_inspetor.addWidget(
+            rotulo(
+                "Clique em qualquer ponto do desenho para ver o que existe ali.", Papel.PEQUENO, "2"
+            )
+        )
+        self._lay_inspetor.addStretch(1)
+        rol.setWidget(corpo)
+        il.addWidget(rol, 1)
+        self.paginas.addWidget(pagina)
+
+        # 2 — como foi feito
+        pagina = QWidget()
+        cl = QVBoxLayout(pagina)
+        cl.setContentsMargins(0, Espaco.S, 0, 0)
+        cl.setSpacing(Espaco.M - 2)
+        intro = rotulo(
+            "Este desenho não foi feito à mão: o fluxo o montou em camadas, passo a passo.",
+            Papel.PEQUENO, "2",
+        )  # fmt: skip
+        intro.setWordWrap(True)
+        cl.addWidget(intro)
+        for titulo, texto, grupo in COMO_FOI_FEITO:
+            bloco = QVBoxLayout()
+            bloco.setSpacing(3)
+            bloco.addWidget(rotulo(titulo, Papel.CORPO_FORTE))
+            r = rotulo(texto, Papel.PEQUENO, "2")
+            r.setWordWrap(True)
+            bloco.addWidget(r)
+            if grupo:
+                ver = botao(f"Ver só: {grupo.lower()} →", "link")
+                ver.setFont(t.fonte(Papel.ETIQUETA))
+                ver.clicked.connect(lambda _c=False, g=grupo: self._filtrar(g, trocar=True))
+                bloco.addWidget(ver, 0, Qt.AlignmentFlag.AlignLeft)
+            cl.addLayout(bloco)
+        cl.addStretch(1)
+        self.paginas.addWidget(pagina)
         raiz.addWidget(lateral)
 
         self._temporizador = QTimer(self)
@@ -402,8 +528,11 @@ class TelaLayout(QWidget):
         for c in info.camadas:
             linha = LinhaCamada(c.indice, c.nome_curto, c.cor, f"{c.nome} — GDS {c.fonte}")
             linha.alternada.connect(self._alternar)
+            linha.isolada.connect(self._isolar)
             self._caixas[c.indice] = linha
             self._lay_camadas.insertWidget(self._lay_camadas.count() - 1, linha)
+        self._grupo_filtros.button(0).setChecked(True)
+        self.prancheta.destaque = None
         self.prancheta.limites = info.caixa
         self.prancheta.limpar()
         self.prancheta.enquadrar()
@@ -418,9 +547,107 @@ class TelaLayout(QWidget):
             self._ocultas.add(indice)
         self._agendar()
 
+    def _trocar_aba(self, indice: int) -> None:
+        self.paginas.setCurrentIndex(indice)
+        self._grupo_abas.button(indice).setChecked(True)
+
+    def _isolar(self, indice: int) -> None:
+        for i, linha in self._caixas.items():
+            linha.definir(i == indice)
+        self._ocultas = set(self._caixas) - {indice}
+        self._mostrar_sobre(self._caixas[indice].nome_camada)
+        self._agendar()
+
+    def _mostrar_sobre(self, nome: str) -> None:
+        texto = ex.camada(nome)
+        self.sobre_camada.setText(f"{nome}: {texto}" if texto else "")
+
+    def _filtrar(self, grupo: str | None, trocar: bool = False) -> None:
+        nomes = set(ex.grupos_de_camadas().get(grupo, [])) if grupo else None
+        for _i, linha in self._caixas.items():
+            linha.definir(nomes is None or linha.nome_camada in nomes)
+        self._ocultas = {i for i, ln in self._caixas.items() if not ln.visivel}
+        indice = [None, "Células", "Fios de sinal", "Alimentação"].index(grupo)
+        self._grupo_filtros.button(indice).setChecked(True)
+        if trocar:
+            self._trocar_aba(0)
+        self._agendar()
+
+    # --- inspetor -----------------------------------------------------------------------------
+
+    def _inspecionar(self, x: float, y: float) -> None:
+        if self.render is None or self.render.info is None:
+            return
+        render, raio = self.render, max(0.02, self.prancheta.escala * 3)
+        self._trocar_aba(1)
+        self._rodar(lambda: render.inspecionar(x, y, raio), self._mostrar_inspecao)
+
+    def _mostrar_inspecao(self, dados: dict) -> None:
+        while self._lay_inspetor.count():
+            item = self._lay_inspetor.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            elif item.layout():
+                item.layout().deleteLater()
+        pal = t.paleta()
+        self._lay_inspetor.addWidget(
+            rotulo(
+                f"Ponto x {fmt.numero(dados['x'], 3)} · y {fmt.numero(dados['y'], 3)} µm",
+                Papel.MONO,
+                "3",
+            )
+        )
+        celulas = dados.get("celulas", [])
+        self.prancheta.destaque = tuple(celulas[0]["caixa"]) if celulas else None
+        self.prancheta.update()
+        if not celulas:
+            self._lay_inspetor.addWidget(
+                rotulo(
+                    "Nenhuma célula aqui: só fios, alimentação ou espaço vazio.", Papel.PEQUENO, "2"
+                )
+            )
+        for c in celulas[:3]:
+            explicado = ex.celula(c["celula"])
+            familia = c["celula"].split("__")[-1]
+            titulo = rotulo(familia, Papel.TITULO)
+            self._lay_inspetor.addWidget(titulo)
+            if c.get("instancia"):
+                self._lay_inspetor.addWidget(rotulo(f"instância {c['instancia']}", Papel.MONO, "2"))
+            if explicado:
+                texto, forca = explicado
+                r = rotulo(texto, Papel.PEQUENO)
+                r.setWordWrap(True)
+                self._lay_inspetor.addWidget(r)
+                if forca:
+                    self._lay_inspetor.addWidget(rotulo(forca, Papel.ROTULO, "3"))
+            x1, y1, x2, y2 = c["caixa"]
+            self._lay_inspetor.addWidget(
+                rotulo(f"{fmt.numero(x2 - x1, 2)} × {fmt.numero(y2 - y1, 2)} µm", Papel.MONO, "3")
+            )
+            completo = rotulo(c["celula"], Papel.MONO, "3")
+            completo.setWordWrap(True)
+            self._lay_inspetor.addWidget(completo)
+        formas = [f for f in dados.get("formas", []) if not f["camada"].startswith("prBoundary")]
+        if formas:
+            self._lay_inspetor.addWidget(rotulo("Formas neste ponto", Papel.ROTULO, "3"))
+            vistas = set()
+            for f in formas:
+                chave = (f["camada"], f["celula"])
+                if chave in vistas:
+                    continue
+                vistas.add(chave)
+                nome = f["camada"].split(" - ")[0]
+                linha = rotulo(f"<b>{nome}</b>&nbsp; <span style='color:{pal.tinta_2}'>"
+                               f"{f['tipo']} · {f['celula'].split('__')[-1]}</span>",
+                               Papel.PEQUENO, rico=True)  # fmt: skip
+                linha.setToolTip(ex.camada(nome) or "")
+                self._lay_inspetor.addWidget(linha)
+        self._lay_inspetor.addStretch(1)
+
     def _todas(self, visiveis: bool) -> None:
         for linha in self._caixas.values():
             linha.definir(visiveis)
+        self._grupo_filtros.button(0).setChecked(True)
         self._ocultas = set() if visiveis else set(self._caixas)
         self._agendar()
 

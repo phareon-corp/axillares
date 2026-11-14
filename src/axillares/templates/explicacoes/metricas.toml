@@ -1,0 +1,100 @@
+# O que cada métrica significa e como ler o valor. Chaves = métricas de Axillares.
+[fmax_mhz]
+o_que = "A maior frequência de relógio em que o circuito ainda funciona, pelo caminho mais lento entre dois flip-flops."
+leitura = "Maior é melhor. Se for menor que a frequência alvo do projeto, o chip não aguenta o relógio pedido."
+
+[folga_setup_ns]
+o_que = "Quanto tempo sobra, no pior caminho, entre o sinal chegar ao flip-flop e a próxima borda do relógio."
+leitura = "Positiva: cabe no relógio. Negativa: algum caminho é lento demais."
+
+[wns_setup_ns]
+o_que = "A pior folga negativa de setup (worst negative slack). Zero quando não há violação."
+leitura = "Precisa ser 0."
+
+[tns_setup_ns]
+o_que = "A soma de todas as folgas negativas de setup (total negative slack)."
+leitura = "Precisa ser 0; quanto mais negativa, mais caminhos violam."
+
+[folga_hold_ns]
+o_que = "Folga de hold: se o sinal novo não chega rápido demais e atropela o valor que o flip-flop está capturando."
+leitura = "Precisa ser positiva."
+
+[wns_hold_ns]
+o_que = "A pior folga negativa de hold."
+leitura = "Precisa ser 0."
+
+[area_celulas_um2]
+o_que = "A soma da área de todas as células padrão do circuito."
+leitura = "Menor é mais barato. Cresce com a lógica que você descreve."
+
+[area_total_um2]
+o_que = "A área do chip inteiro: células, espaço para fios, margens e alimentação."
+leitura = "É o tamanho do recorte de silício."
+
+[utilizacao_pct]
+o_que = "Quanto da área útil do chip as células ocupam."
+leitura = "Entre 40 % e 70 % é confortável; muito alta dificulta o roteamento."
+
+[celulas]
+o_que = "Quantas células padrão o circuito usa, incluindo as de apoio (preenchimento, tap, buffers)."
+leitura = "Compare execuções: dobrar a lógica deve dobrar mais ou menos as células."
+
+[registradores]
+o_que = "Quantos flip-flops (bits de memória) existem no circuito."
+leitura = "Deve bater com o que você descreveu: um contador de 8 bits tem 8."
+
+[buffers]
+o_que = "Células que só repetem o sinal, inseridas para acelerar fios longos ou com muita carga."
+leitura = "Algumas são normais; muitas indicam fios longos ou sinais com carga demais."
+
+[inversores]
+o_que = "Células que invertem o sinal."
+leitura = "Informativo."
+
+[redes]
+o_que = "Quantos fios distintos (nets) ligam as células."
+leitura = "Informativo; cresce com a complexidade."
+
+[pinos]
+o_que = "Quantas ligações o chip tem com o mundo de fora, mais as de alimentação."
+leitura = "Bate com as portas do módulo de topo."
+
+[profundidade_logica]
+o_que = "Quantas células o sinal atravessa no caminho mais longo entre dois flip-flops."
+leitura = "Menor é mais rápido."
+
+[potencia_pico_mw]
+o_que = "A potência estimada no pior momento, em miliwatts."
+leitura = "Cresce com a frequência e com quantas células chaveiam."
+
+[potencia_fuga_mw]
+o_que = "A potência gasta mesmo parado, pela fuga de corrente dos transistores."
+leitura = "No sky130 costuma ser minúscula para circuitos pequenos."
+
+[comprimento_fios_um]
+o_que = "O comprimento total de todos os fios desenhados no roteamento."
+leitura = "Menor é melhor: menos atraso e menos área de metal."
+
+[vias]
+o_que = "Quantas ligações verticais entre camadas de metal o roteamento usou."
+leitura = "Informativo."
+
+[violacoes_drc]
+o_que = "Quantas regras de desenho do PDK o layout desrespeita (largura, espaçamento, sobreposição mínima)."
+leitura = "Precisa ser 0 para o chip ser fabricável."
+
+[violacoes_drv]
+o_que = "Violações elétricas: transições lentas demais, capacitância ou fan-out acima do permitido."
+leitura = "Precisa ser 0."
+
+[erros]
+o_que = "Quantos erros as ferramentas relataram ao longo do fluxo."
+leitura = "Precisa ser 0."
+
+[avisos]
+o_que = "Quantos avisos as ferramentas relataram."
+leitura = "Avisos não impedem o chip; leia os do log se algo parecer estranho."
+
+[duracao_fluxo_s]
+o_que = "Quanto tempo o motor levou para executar."
+leitura = "Informativo."

@@ -1,0 +1,5 @@
+# Circuito sem relógio: um relógio "virtual" (sem porta) serve só de régua de tempo,
+# dizendo quanto tempo o sinal pode levar da entrada até a saída ({{ periodo_ns }} ns).
+create_clock -name virtual -period {{ periodo_ns }}
+set_input_delay {{ atraso_ns }} -clock virtual [all_inputs]
+set_output_delay {{ atraso_ns }} -clock virtual [all_outputs]

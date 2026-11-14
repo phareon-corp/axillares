@@ -69,6 +69,7 @@ class EditorCodigo(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._pronto = False
+        self._fila: list[tuple[str, tuple, object]] = []
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         self.visao = QWebEngineView()
@@ -102,9 +103,17 @@ class EditorCodigo(QWidget):
     def _ficou_pronto(self) -> None:
         self._pronto = True
         self.aplicar_tema()
+        fila, self._fila = self._fila, []
+        for funcao, argumentos, retorno in fila:
+            self._js(funcao, *argumentos, retorno=retorno)
         self.pronto.emit()
 
     def _js(self, funcao: str, *argumentos: object, retorno=None) -> None:
+        # Antes de a página avisar que está pronta, window.axil pode nem existir: o comando
+        # esperaria em vão. Os pedidos ficam na fila e saem todos, em ordem, no "pronto".
+        if not self._pronto and funcao != "tema":
+            self._fila.append((funcao, argumentos, retorno))
+            return
         args = ", ".join(json.dumps(a, ensure_ascii=False) for a in argumentos)
         codigo = f"window.axil && window.axil.{funcao}({args})"
         if retorno is None:

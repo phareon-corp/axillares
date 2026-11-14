@@ -341,9 +341,10 @@ def paleta() -> Paleta:
 
 
 # --- Editor de código (Monaco) ----------------------------------------------------------------
-# A paleta de código é contida, como manda a Phareon: o texto é tinta; palavras-chave ganham peso
-# (negrito), não cor; a cor fica para o que é dado (números) e para o que fala com a ferramenta
-# (diretivas `timescale, tarefas $display). O laranja é o cursor — o ponto ativo, a fonte.
+# A paleta de código: tons quentes e frios suaves, da família do gradiente espectral da Phareon.
+# Palavras-chave num coral claro (não o laranja de sinal #FF4A1C, que fica para o cursor e a linha
+# atual), tipos e portas num azul de aço, números em âmbar, textos em verde-musgo, tarefas de
+# sistema em lilás. Saturação baixa: o código lê bem por horas sem cansar.
 
 
 @dataclass(frozen=True)
@@ -359,23 +360,23 @@ class PaletaCodigo:
 
 
 CODIGO_ESCURO = PaletaCodigo(
-    palavra_chave="#F4F1E9",
-    tipo="#CDBFAE",
-    numero="#FFAA1C",
-    texto="#B9D98C",
+    palavra_chave="#FF9E7A",
+    tipo="#8FC1E3",
+    numero="#F2C46D",
+    texto="#A8D38D",
     comentario="#6E6A60",
-    sistema="#8DB4FF",
-    diretiva="#C59BFF",
+    sistema="#C7A6FF",
+    diretiva="#C7A6FF",
     delimitador="#8C877D",
 )
 CODIGO_CLARO = PaletaCodigo(
-    palavra_chave="#0A0A0D",
-    tipo="#5A4A38",
-    numero="#A35400",
+    palavra_chave="#B23A12",
+    tipo="#1F5F8B",
+    numero="#8A5A00",
     texto="#3B6B16",
     comentario="#8A857A",
-    sistema="#2C5AA8",
-    diretiva="#7A3BB0",
+    sistema="#6B3FB0",
+    diretiva="#6B3FB0",
     delimitador="#6F6B5F",
 )
 

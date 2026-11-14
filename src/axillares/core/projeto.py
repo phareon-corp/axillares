@@ -62,6 +62,19 @@ class SecaoAsic(_Secao):
     biblioteca: str | None = None
     frequencia_mhz: float = Field(default=100.0, gt=0, le=5000)
     relogio: str = Field(default="clk", description="Porta de relógio do módulo de topo.")
+    chip_um: tuple[float, float] | None = Field(
+        default=None,
+        description="Tamanho fixo do chip (largura, altura) em µm. Sem ele, o motor decide pela "
+        "densidade — o que deixa circuitos minúsculos pequenos demais para a malha de "
+        "alimentação.",
+    )
+
+    @field_validator("chip_um")
+    @classmethod
+    def _chip_razoavel(cls, valor: tuple[float, float] | None) -> tuple[float, float] | None:
+        if valor is not None and not all(10 <= v <= 20000 for v in valor):
+            raise ValueError("cada lado do chip precisa estar entre 10 e 20000 µm")
+        return valor
 
     @property
     def biblioteca_efetiva(self) -> str:
@@ -161,6 +174,7 @@ _ROTULOS = {
     "fontes.rtl": "a lista de fontes RTL",
     "asic.pdk": "o PDK",
     "asic.frequencia_mhz": "a frequência alvo",
+    "asic.chip_um": "o tamanho do chip",
 }
 
 

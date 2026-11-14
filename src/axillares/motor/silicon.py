@@ -112,6 +112,7 @@ class MotorSiliconCompiler:
             "builddir": f"{NO_CONTEINER_TRABALHO}/build",
             "cachedir": NO_CONTEINER_CACHE,
             "job": JOB,
+            "chip_um": list(p.asic.chip_um) if p.asic.chip_um else None,
         }
 
     def comando(self, ctx: Contexto) -> list[str]:

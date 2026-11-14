@@ -81,6 +81,11 @@ PROXIMOS_PASSOS = {
         "A síntese não conseguiu transformar o RTL em portas lógicas. Confira se o módulo de "
         "topo no axil.toml é o certo e se não há construções só de simulação (initial, #atraso)."
     ),
+    "floorplan": (
+        "O floorplan não conseguiu montar o chip. Se o circuito é muito pequeno (poucas "
+        "células), a malha de alimentação não cabe: fixe o tamanho do chip no axil.toml, na "
+        "seção [asic], com chip_um = [40, 40] (largura e altura em µm)."
+    ),
     "route": (
         "O roteamento não fechou. Tente reduzir a utilização (mais área) ou a frequência alvo."
     ),

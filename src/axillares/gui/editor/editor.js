@@ -150,6 +150,44 @@ function avisarCursor() {
   if (p && m) estado.ponte.cursor(p.lineNumber, p.column, m.getLanguageId());
 }
 
+// Didática: dicas em português ao passar o mouse e trechos prontos (verilog-pt.json).
+function registrarDidatica() {
+  const dados = window.DIDATICA;
+  if (!dados) return;
+  monaco.languages.registerHoverProvider("systemverilog", {
+    provideHover(modelo, posicao) {
+      const linha = modelo.getLineContent(posicao.lineNumber);
+      for (const [op, texto] of Object.entries(dados.operadores)) {
+        const i = linha.indexOf(op, Math.max(0, posicao.column - 1 - op.length));
+        if (i >= 0 && posicao.column - 1 >= i && posicao.column - 1 < i + op.length
+            && (op !== "=" || !"<>=!".includes(linha[i - 1] || "") && linha[i + 1] !== "=")) {
+          return { range: new monaco.Range(posicao.lineNumber, i + 1, posicao.lineNumber, i + 1 + op.length),
+                   contents: [{ value: texto }] };
+        }
+      }
+      const palavra = modelo.getWordAtPosition(posicao);
+      if (!palavra) return null;
+      const texto = dados.dicas[palavra.word];
+      if (!texto) return null;
+      return { range: new monaco.Range(posicao.lineNumber, palavra.startColumn, posicao.lineNumber, palavra.endColumn),
+               contents: [{ value: texto }] };
+    },
+  });
+  monaco.languages.registerCompletionItemProvider("systemverilog", {
+    provideCompletionItems(modelo, posicao) {
+      const palavra = modelo.getWordUntilPosition(posicao);
+      const faixa = new monaco.Range(posicao.lineNumber, palavra.startColumn, posicao.lineNumber, palavra.endColumn);
+      const K = monaco.languages.CompletionItemKind;
+      const R = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet;
+      const trechos = dados.trechos.map(t => ({ label: t.rotulo, detail: t.detalhe, kind: K.Snippet,
+        insertText: t.texto, insertTextRules: R, range: faixa, documentation: { value: "```verilog\n" + t.texto.replace(/\$\{\d+:([^}]*)\}/g, "$1").replace(/\$\d/g, "") + "\n```" } }));
+      const palavras = Object.entries(dados.dicas).map(([p, d]) => ({ label: p, kind: K.Keyword,
+        insertText: p, range: faixa, documentation: { value: d } }));
+      return { suggestions: [...trechos, ...palavras] };
+    },
+  });
+}
+
 new QWebChannel(qt.webChannelTransport, canal => {
   estado.ponte = canal.objects.ponte;
   require.config({ paths: { vs: "monaco/vs" } });
@@ -167,12 +205,15 @@ new QWebChannel(qt.webChannelTransport, canal => {
       overviewRulerBorder: false, hideCursorInOverviewRuler: true, fixedOverflowWidgets: true,
       scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10, useShadows: false },
       unicodeHighlight: { ambiguousCharacters: false }, wordWrap: "off", tabSize: 4,
+      hover: { delay: 350 }, quickSuggestions: { other: true, comments: false, strings: false },
+      suggest: { showWords: false, preview: true }, snippetSuggestions: "top",
     });
     estado.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => window.axil.pedirSalvar());
     estado.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => estado.ponte.acao("sintese"));
     estado.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
                              () => estado.ponte.acao("gds"));
     estado.editor.onDidChangeCursorPosition(avisarCursor);
+    registrarDidatica();
     const fila = estado.fila; estado.fila = [];
     for (const [nome, args] of fila) window.axil[nome](...args);
     estado.ponte.pronto();

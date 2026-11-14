@@ -59,9 +59,16 @@ class Sessao(QObject):
 
         self._rodar(carregar, self._definir)
 
-    def criar(self, nome: str, destino: Path) -> None:
+    def criar(
+        self,
+        nome: str,
+        destino: Path,
+        modelo: str = "vazio",
+        pdk: str = "skywater130",
+        frequencia_mhz: float = 100.0,
+    ) -> None:
         def criar() -> Projeto:
-            projeto = carregar_projeto(criar_projeto(nome, destino))
+            projeto = carregar_projeto(criar_projeto(nome, destino, modelo, pdk, frequencia_mhz))
             recentes.registrar(projeto.raiz, projeto.nome)
             return projeto
 

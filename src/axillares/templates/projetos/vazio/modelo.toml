@@ -1,0 +1,5 @@
+titulo = "Em branco"
+nivel = "ponto de partida"
+ordem = 1
+descricao = "Só o esqueleto: um módulo com relógio, reset, uma entrada e uma saída registradas. Apague o miolo e escreva o seu circuito."
+aprende = ["estrutura de um módulo", "portas de entrada e saída"]

@@ -20,6 +20,7 @@ app = typer.Typer(
 console = Console()
 app.add_typer(ambiente.app, name="ambiente")
 app.command("novo")(projeto.novo)
+app.command("modelos")(projeto.modelos_cmd)
 app.command("executar")(projeto.executar)
 app.command("runs")(projeto.runs)
 app.command("comparar")(projeto.comparar_cmd)

@@ -1,0 +1,6 @@
+titulo = "Contador de 8 bits"
+nivel = "iniciante"
+ordem = 3
+descricao = "Um registrador que soma 1 a cada pulso de relógio quando habilitado. O exemplo clássico de lógica sequencial: flip-flops + um somador."
+aprende = ["lógica sequencial", "reset assíncrono", "parâmetros"]
+topo_fixo = "contador"

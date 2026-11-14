@@ -1,0 +1,25 @@
+// Testbench: um circuito de mentira que gera estímulos e confere a resposta.
+`timescale 1ns/1ps
+module tb_{{ topo }};
+    reg clk = 0, rst_n = 0;
+    reg  [7:0] entrada = 8'd0;
+    wire [7:0] saida;
+
+    {{ topo }} dut (.clk(clk), .rst_n(rst_n), .entrada(entrada), .saida(saida));
+
+    always #({{ periodo_ns }} / 2.0) clk = ~clk;
+
+    initial begin
+        $dumpfile("tb_{{ topo }}.vcd");
+        $dumpvars(0, tb_{{ topo }});
+        #12 rst_n = 1;
+        entrada = 8'd42;
+        @(posedge clk); #1;
+        if (saida !== 8'd42) begin
+            $display("FALHOU: saida = %0d, esperado 42", saida);
+            $fatal(1);
+        end
+        $display("OK");
+        $finish;
+    end
+endmodule

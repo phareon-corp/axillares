@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QFileSystemWatcher, Qt, QTimer, Signal
+from PySide6.QtCore import QFileSystemWatcher, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -41,6 +41,67 @@ NOMES_LINGUAGEM = {
     "shell": "Shell",
     "plaintext": "Texto",
 }
+
+
+PAPEIS = {
+    "RTL": ("V", "o circuito"),
+    "Testbenches": ("TB", "teste em simulação"),
+    "Restrições": ("SDC", "relógio e atrasos"),
+    "Projeto": ("TOML", "ficha do projeto"),
+    "Outros": ("MD", "documentação"),
+}
+CONTEXTOS = {
+    "RTL": "Este é o circuito, descrito em Verilog. A síntese transforma este texto em portas "
+    "lógicas da biblioteca do PDK; o resto do fluxo dá forma física a elas.",
+    "Testbenches": "Um testbench é um circuito de mentira que gera estímulos e confere as "
+    "respostas do seu circuito em simulação. Não vira chip: serve para descobrir erros antes "
+    "da síntese.",
+    "Restrições": "As restrições (SDC) dizem ao fluxo qual é o relógio e quanto tempo os sinais "
+    "têm nas bordas do chip. A análise de temporização usa este arquivo para dizer se o "
+    "circuito cabe.",
+    "Projeto": "O axil.toml é a ficha do projeto: qual é o módulo de topo, onde estão as fontes, o "
+    "PDK, a frequência alvo e que motor executa cada etapa.",
+    "Outros": "Um arquivo de apoio do projeto.",
+}
+
+
+class ItemArquivo(QWidget):
+    """Linha da árvore: etiqueta do tipo, nome e papel do arquivo no fluxo."""
+
+    def __init__(self, nome: str, grupo: str) -> None:
+        super().__init__()
+        sigla, papel = PAPEIS.get(grupo, ("•", ""))
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(4, 4, 4, 4)
+        self.setFixedHeight(46)
+        lay.setSpacing(Espaco.S + 2)
+        self.sigla = rotulo(sigla, Papel.ETIQUETA, "2")
+        self.sigla.setProperty("tipo", "sigla")
+        self.sigla.setFixedWidth(38)
+        self.sigla.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(self.sigla, 0, Qt.AlignmentFlag.AlignVCenter)
+        coluna = QVBoxLayout()
+        coluna.setSpacing(1)
+        self.nome = rotulo(nome, Papel.PEQUENO)
+        coluna.addWidget(self.nome)
+        if papel:
+            self.papel = rotulo(papel, Papel.PEQUENO, "3")
+            coluna.addWidget(self.papel)
+        lay.addLayout(coluna, 1)
+        self.marca = rotulo("", Papel.ETIQUETA, "acento")
+        lay.addWidget(self.marca, 0, Qt.AlignmentFlag.AlignVCenter)
+
+    def definir(self, sujo: bool, problemas: int, atual: bool) -> None:
+        if problemas:
+            self.marca.setText(f"✕ {problemas}")
+            self.marca.setProperty("tom", "falha")
+        else:
+            self.marca.setText("●" if sujo else "")
+            self.marca.setProperty("tom", "acento")
+        self.nome.setProperty("tom", "falha" if problemas else (None if atual else "2"))
+        for w in (self.marca, self.nome):
+            w.style().unpolish(w)
+            w.style().polish(w)
 
 
 class Aba(QFrame):
@@ -129,7 +190,7 @@ class TelaEditor(QWidget):
         self.arvore.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.arvore.itemClicked.connect(self._clicou_item)
         lat.addWidget(self.arvore, 1)
-        lateral.setMinimumWidth(200)
+        lateral.setMinimumWidth(240)
         divisor.addWidget(lateral)
 
         # --- área do editor ---
@@ -156,13 +217,15 @@ class TelaEditor(QWidget):
         self._lay_abas.addStretch(1)
         rolagem.setWidget(faixa)
         b.addWidget(rolagem, 1)
-        self.botao_salvar = botao("Salvar", "compacto")
+        self.botao_salvar = botao("Salvar  Ctrl+S", "compacto")
         self.botao_salvar.setToolTip("Ctrl+S")
         self.botao_salvar.clicked.connect(lambda: self.editor and self.editor.salvar())
         self.botao_sintese = botao("Síntese  ▸", "compacto")
+        self.botao_sintese.setMinimumWidth(96)
         self.botao_sintese.setToolTip("Ctrl+Enter — salva tudo e executa a síntese")
         self.botao_sintese.clicked.connect(lambda: self.sessao.executar(Etapa.SINTESE))
         self.botao_gds = botao("GDS  ▸", "compacto-primario")
+        self.botao_gds.setMinimumWidth(80)
         self.botao_gds.setToolTip("Ctrl+Shift+Enter — salva tudo e executa o fluxo até o GDS")
         self.botao_gds.clicked.connect(lambda: self.sessao.executar(Etapa.GDS))
         for w in (self.botao_salvar, self.botao_sintese, self.botao_gds):
@@ -170,9 +233,24 @@ class TelaEditor(QWidget):
             b.addWidget(w)
         col.addWidget(barra)
 
+        faixa_contexto = QFrame()
+        faixa_contexto.setProperty("tipo", "faixa-contexto")
+        fc = QHBoxLayout(faixa_contexto)
+        fc.setContentsMargins(Espaco.M + 2, Espaco.S, Espaco.M, Espaco.S)
+        fc.setSpacing(Espaco.M)
+        coluna_ctx = QVBoxLayout()
+        coluna_ctx.setSpacing(3)
         self.caminho = rotulo("", Papel.ETIQUETA, "3")
-        self.caminho.setContentsMargins(Espaco.M + 2, 6, Espaco.M, 6)
-        col.addWidget(self.caminho)
+        coluna_ctx.addWidget(self.caminho)
+        self.contexto = rotulo("", Papel.PEQUENO, "2")
+        self.contexto.setWordWrap(True)
+        coluna_ctx.addWidget(self.contexto)
+        fc.addLayout(coluna_ctx, 1)
+        self.botao_como = botao("Como funciona o fluxo →", "link")
+        self.botao_como.setFont(t.fonte(Papel.ETIQUETA))
+        self.botao_como.clicked.connect(lambda: self.sessao.pedir_tela.emit("como-funciona", None))
+        fc.addWidget(self.botao_como, 0, Qt.AlignmentFlag.AlignVCenter)
+        col.addWidget(faixa_contexto)
 
         self._lugar_editor = QVBoxLayout()
         self._lugar_editor.setContentsMargins(0, 0, 0, 0)
@@ -229,7 +307,7 @@ class TelaEditor(QWidget):
         col.addWidget(estado)
         divisor.addWidget(area)
         divisor.setStretchFactor(1, 1)
-        divisor.setSizes([250, 1000])
+        divisor.setSizes([290, 1000])
 
         self._inicio = 0.0
         self._ultimo: RegistroExecucao | None = None
@@ -297,6 +375,8 @@ class TelaEditor(QWidget):
 
     def _preencher_arvore(self, grupos: list[fontes.Grupo]) -> None:
         self.arvore.clear()
+        self._itens: dict[Path, ItemArquivo] = {}
+        self._grupo_de: dict[Path, str] = {}
         projeto = self.sessao.projeto
         for g in grupos:
             topo = QTreeWidgetItem([g.nome.upper()])
@@ -306,30 +386,32 @@ class TelaEditor(QWidget):
             self.arvore.addTopLevelItem(topo)
             for arquivo in g.arquivos:
                 rel = projeto.relativo(arquivo) if projeto else arquivo.name
-                item = QTreeWidgetItem([arquivo.name])
+                item = QTreeWidgetItem([""])
                 item.setToolTip(0, rel)
                 item.setData(0, PAPEL_CAMINHO, str(arquivo))
-                item.setFont(0, t.fonte(Papel.PEQUENO))
                 topo.addChild(item)
+                widget = ItemArquivo(arquivo.name, g.nome)
+                widget.setToolTip(rel)
+                item.setSizeHint(0, QSize(200, 46))
+                self.arvore.setItemWidget(item, 0, widget)
+                self._itens[arquivo] = widget
+                self._grupo_de[arquivo] = g.nome
             topo.setExpanded(True)
         self._marcar_arvore()
+        # ao abrir um projeto, o RTL principal já aparece aberto
+        if not self.abas and projeto is not None:
+            topo_rtl = next(
+                (a for a in projeto.arquivos_rtl() if a.stem == projeto.projeto.topo),
+                next(iter(projeto.arquivos_rtl()), None),
+            )
+            if topo_rtl is not None:
+                self.abrir(topo_rtl)
 
     def _marcar_arvore(self) -> None:
-        for i in range(self.arvore.topLevelItemCount()):
-            topo = self.arvore.topLevelItem(i)
-            for j in range(topo.childCount()):
-                item = topo.child(j)
-                caminho = Path(item.data(0, PAPEL_CAMINHO))
-                nome = caminho.name + ("  ●" if caminho in self.sujos else "")
-                if self._problemas.get(caminho):
-                    nome += f"  ✕ {len(self._problemas[caminho])}"
-                item.setText(0, nome)
-                cor = (
-                    "falha"
-                    if self._problemas.get(caminho)
-                    else ("tinta" if caminho == self.atual else "tinta_2")
-                )
-                item.setForeground(0, t.paleta().qcolor(cor))
+        for caminho, widget in getattr(self, "_itens", {}).items():
+            widget.definir(
+                caminho in self.sujos, len(self._problemas.get(caminho, [])), caminho == self.atual
+            )
 
     def _clicou_item(self, item: QTreeWidgetItem) -> None:
         dado = item.data(0, PAPEL_CAMINHO)
@@ -380,6 +462,8 @@ class TelaEditor(QWidget):
         projeto = self.sessao.projeto
         rel = projeto.relativo(caminho) if projeto else caminho.name
         self.caminho.setText(f"{projeto.nome if projeto else ''} / {rel}")
+        grupo = getattr(self, "_grupo_de", {}).get(caminho, "Outros")
+        self.contexto.setText(CONTEXTOS.get(grupo, ""))
         self._atualizar_abas()
 
     def _atualizar_abas(self) -> None:
@@ -417,6 +501,7 @@ class TelaEditor(QWidget):
 
     def _mostrar_vazio(self) -> None:
         self.caminho.setText("")
+        self.contexto.setText("Escolha um arquivo à esquerda. Cada um tem um papel no fluxo.")
         self.posicao.setText("")
         self.linguagem.setText("")
         self.situacao_arquivo.setText("")

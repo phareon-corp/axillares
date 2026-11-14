@@ -41,6 +41,13 @@ def principal(caminho_pedido: str) -> int:
     alvo = getattr(targets, ALVOS[pedido["pdk"]])
     alvo(projeto)
 
+    if pedido.get("chip_um"):
+        largura, altura = pedido["chip_um"]
+        margem = max(2.0, min(largura, altura) * 0.1)
+        projeto.constraint.area.set_diearea_rectangle(
+            height=altura, width=largura, coremargin=margem
+        )
+
     projeto.option.set_builddir(pedido["builddir"])
     projeto.option.set_jobname(pedido["job"])
     projeto.option.set_nodisplay(True)

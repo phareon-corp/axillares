@@ -162,3 +162,28 @@ QPushButton[tipo="compacto"]:disabled, QPushButton[tipo="compacto-primario"]:dis
 
 QFrame[tipo="barra-estado"] { background: ${fundo}; border-top: 1px solid ${linha}; }
 QFrame[tipo="painel-problemas"] { background: ${fundo}; border-top: 1px solid ${linha_forte}; }
+
+/* ---- novo projeto ----------------------------------------------------------------------- */
+QFrame[tipo="cartao-modelo"] { background: ${fundo_2}; border: 1px solid ${linha}; border-radius: ${raio_l}px; }
+QFrame[tipo="cartao-modelo"]:hover { border-color: ${linha_forte}; background: ${fundo_3}; }
+QFrame[tipo="cartao-modelo"][escolhido="sim"] { border: 1px solid ${acento}; background: ${fundo_3}; }
+QDoubleSpinBox {
+    background: ${fundo_2}; color: ${tinta}; border: 1px solid ${linha_forte};
+    border-radius: ${raio_s}px; padding: 8px 12px;
+}
+QDoubleSpinBox:focus { border-color: ${acento}; }
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button { width: 0; border: none; }
+
+/* ---- fluxo explicado -------------------------------------------------------------------- */
+QWidget[tipo="grade"] { background: ${linha}; border: 1px solid ${linha}; }
+QFrame[tipo="cartao-passo"] { background: ${fundo}; border-top: 2px solid transparent; }
+QFrame[tipo="cartao-passo"]:hover { background: ${fundo_3}; }
+QFrame[tipo="cartao-passo"][estado="agora"] { background: ${fundo_2}; border-top: 2px solid ${acento}; }
+QFrame[tipo="cartao-passo"][estado="feito"] { border-top: 2px solid ${ok}; }
+QFrame[tipo="cartao-passo"][estado="falhou"] { background: ${fundo_2}; border-top: 2px solid ${falha}; }
+
+QLabel[tipo="sigla"] {
+    border: 1px solid ${linha_forte}; border-radius: ${raio_s}px; padding: 2px 0; color: ${tinta_2};
+}
+QFrame[tipo="faixa-contexto"] { background: ${fundo}; border-bottom: 1px solid ${linha}; }
+QTreeWidget::item { padding: 0; }

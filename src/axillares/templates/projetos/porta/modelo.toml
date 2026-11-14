@@ -1,0 +1,6 @@
+titulo = "Portas lógicas"
+nivel = "primeiro contato"
+ordem = 2
+descricao = "Um meio-somador: duas portas (XOR e AND) que somam dois bits. Sem relógio, sem memória — lógica combinacional pura, o menor chip possível."
+aprende = ["lógica combinacional", "assign", "portas da biblioteca de células"]
+topo_fixo = "meio_somador"

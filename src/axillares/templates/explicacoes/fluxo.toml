@@ -1,0 +1,103 @@
+# Como um chip sai do Verilog e vira GDS — explicado passo a passo.
+# Cada [[passo]] corresponde a uma família de nós do fluxo do motor (o prefixo do nome do nó:
+# "place.global" → "place"). Texto curto, concreto, em português. Revisado em 2026-11-14.
+
+[[passo]]
+id = "elaborate"
+titulo = "Leitura do RTL"
+ferramenta = "slang"
+o_que = "Lê os seus arquivos Verilog, confere a sintaxe e os tipos, resolve os parâmetros e monta a hierarquia de módulos a partir do módulo de topo."
+entra = "rtl/*.v — o circuito descrito como comportamento"
+sai = "o circuito elaborado, ainda sem nenhuma porta lógica"
+observar = "Se falhar aqui, é erro de escrita no Verilog: um ; esquecido, um nome de sinal trocado, um módulo que não existe."
+
+[[passo]]
+id = "synthesis"
+titulo = "Síntese lógica"
+ferramenta = "Yosys"
+o_que = "Traduz o comportamento (always, assign, +, ==) em portas lógicas reais da biblioteca de células do PDK, e otimiza: remove o que não é usado, junta portas, escolhe células menores."
+entra = "o circuito elaborado + a biblioteca de células padrão (sky130_fd_sc_hd)"
+sai = "a netlist (.vg): a lista de células e de fios que as ligam"
+observar = "Quantas células e quantos registradores (flip-flops) apareceram. Um contador de 8 bits tem 8 flip-flops; se apareceram mais ou menos, o circuito não é o que você pensou."
+
+[[passo]]
+id = "cleanup"
+titulo = "Preparo da netlist"
+ferramenta = "OpenROAD"
+o_que = "Ajusta a netlist para a etapa física: remove buffers desnecessários e confere que toda célula existe na biblioteca."
+entra = "a netlist da síntese"
+sai = "a netlist pronta para virar desenho"
+observar = "Raramente falha; se falhar, costuma ser célula ou porta sem ligação."
+
+[[passo]]
+id = "timing"
+titulo = "Análise de temporização"
+ferramenta = "OpenSTA"
+o_que = "Calcula quanto tempo o sinal leva em cada caminho entre dois flip-flops, somando o atraso de cada célula, e compara com o período do relógio do SDC."
+entra = "a netlist + os atrasos das células (liberty) + o relógio (SDC)"
+sai = "a frequência máxima estimada (Fmax) e a folga de cada caminho"
+observar = "Folga de setup positiva = o circuito cabe no relógio. Negativa = algum caminho é lento demais: diminua a frequência ou simplifique a lógica."
+
+[[passo]]
+id = "floorplan"
+titulo = "Floorplan"
+ferramenta = "OpenROAD"
+o_que = "Decide o tamanho do chip e da área útil, traça as linhas onde as células vão morar, põe os pinos nas bordas, espalha células de ligação ao substrato (tap) e desenha a malha de alimentação (VPWR e VGND)."
+entra = "a netlist + a densidade desejada (ou o tamanho fixo de asic.chip_um)"
+sai = "um chip vazio: contorno, linhas, pinos e a grade de alimentação"
+observar = "As faixas largas de metal que cruzam o chip são a alimentação. Se o circuito for minúsculo, ela pode não caber — fixe asic.chip_um."
+
+[[passo]]
+id = "place"
+titulo = "Posicionamento"
+ferramenta = "OpenROAD"
+o_que = "Escolhe onde cada célula fica, tentando deixar perto quem conversa muito (menos fio, menos atraso). Primeiro uma posição aproximada, depois encaixa cada célula numa linha, sem sobreposição. Se algum sinal estiver lento ou com carga demais, insere buffers."
+entra = "o chip vazio do floorplan + a netlist"
+sai = "todas as células no lugar, ainda sem fios entre elas"
+observar = "A utilização: quanto da área útil as células ocupam. Muito alta deixa pouco espaço para os fios."
+
+[[passo]]
+id = "cts"
+titulo = "Árvore de relógio"
+ferramenta = "OpenROAD (TritonCTS)"
+o_que = "Leva o relógio a todos os flip-flops ao mesmo tempo, montando uma árvore de buffers de relógio com atrasos equilibrados. Depois corrige caminhos lentos e preenche os vãos entre células com células de preenchimento."
+entra = "as células posicionadas"
+sai = "o relógio distribuído; o chip sem buracos nas linhas"
+observar = "O skew (diferença de chegada do relógio entre flip-flops) deve ser pequeno. Aparecem células clkbuf e fill no layout."
+
+[[passo]]
+id = "route"
+titulo = "Roteamento"
+ferramenta = "OpenROAD (TritonRoute)"
+o_que = "Desenha os fios de metal e as vias que ligam os pinos das células, exatamente como a netlist manda, respeitando as regras de desenho do PDK (largura e espaçamento mínimos). Por fim, protege portas contra o efeito antena com diodos."
+entra = "as células posicionadas + a netlist"
+sai = "o layout completo: células e fios em várias camadas de metal"
+observar = "Violações de DRC devem ser zero. O comprimento total de fio e o número de vias contam o custo do roteamento."
+
+[[passo]]
+id = "dfm"
+titulo = "Preparo para fabricação"
+ferramenta = "OpenROAD"
+o_que = "Preenche áreas vazias de metal para a fábrica polir o chip por igual (metal fill). Neste fluxo de demonstração está desligado."
+entra = "o layout roteado"
+sai = "o layout com preenchimento"
+observar = "Aparece como passo pulado; é normal."
+
+[[passo]]
+id = "write"
+titulo = "Escrita do GDSII"
+ferramenta = "KLayout · OpenROAD"
+o_que = "Junta o desenho de cada célula da biblioteca com o roteamento e grava o GDSII — o arquivo de geometrias, camada por camada, que vai para a fábrica. Grava também a netlist final, o DEF, o LEF e os atrasos (SDF)."
+entra = "o layout roteado + o desenho das células da biblioteca"
+sai = "contador.gds e companhia, em saida/ da execução"
+observar = "É o que você vê na tela Layout."
+
+[etapas.sintese]
+titulo = "Síntese"
+resumo = "Do Verilog até a lista de portas lógicas, com uma estimativa de velocidade. Leva segundos e já diz se o circuito é o que você queria e se cabe no relógio."
+passos = ["elaborate", "synthesis", "timing"]
+
+[etapas.gds]
+titulo = "Do RTL ao GDS"
+resumo = "O fluxo físico inteiro: depois da síntese, o circuito ganha forma — lugar para cada célula, relógio distribuído, fios desenhados — e vira o GDSII que uma fábrica produziria."
+passos = ["elaborate", "synthesis", "cleanup", "timing", "floorplan", "place", "cts", "route", "write"]

@@ -1,0 +1,20 @@
+# Projeto Axillares — {{ nome }}
+
+[projeto]
+nome = "{{ nome }}"
+topo = "semaforo"
+descricao = "Semáforo: uma máquina de estados finitos de três estados."
+
+[fontes]
+rtl = ["rtl/**/*.v", "rtl/**/*.sv"]
+testbenches = ["tb/**/*.v"]
+sdc = "restricoes/semaforo.sdc"
+
+[asic]
+pdk = "{{ pdk }}"          # skywater130 · gf180 · ihp130
+frequencia_mhz = {{ frequencia_mhz }}
+relogio = "clk"
+
+[motores]
+sintese = "siliconcompiler"
+gds = "siliconcompiler"

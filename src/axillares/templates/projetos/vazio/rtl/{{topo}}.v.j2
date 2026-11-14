@@ -1,0 +1,18 @@
+// {{ topo }} — escreva aqui o seu circuito.
+//
+// Um módulo Verilog é uma caixa com portas: entradas (input) e saídas (output).
+// Este esqueleto só copia a entrada para a saída a cada borda de subida do relógio,
+// o que já é um circuito sintetizável — troque o miolo pelo que você quiser.
+module {{ topo }} (
+    input  wire       clk,      // relógio
+    input  wire       rst_n,    // reset, ativo em nível baixo
+    input  wire [7:0] entrada,
+    output reg  [7:0] saida
+);
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            saida <= 8'd0;
+        else
+            saida <= entrada;
+    end
+endmodule

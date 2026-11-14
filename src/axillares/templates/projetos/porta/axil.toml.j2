@@ -1,0 +1,23 @@
+# Projeto Axillares — {{ nome }}
+
+[projeto]
+nome = "{{ nome }}"
+topo = "meio_somador"
+descricao = "Meio-somador: duas portas lógicas, sem relógio."
+
+[fontes]
+rtl = ["rtl/**/*.v", "rtl/**/*.sv"]
+testbenches = ["tb/**/*.v"]
+sdc = "restricoes/meio_somador.sdc"
+
+[asic]
+pdk = "{{ pdk }}"          # skywater130 · gf180 · ihp130
+frequencia_mhz = {{ frequencia_mhz }}
+relogio = "virtual"
+# Duas células são pouco demais para a malha de alimentação caber num chip "do tamanho
+# certo"; fixamos 40 × 40 µm.
+chip_um = [40, 40]
+
+[motores]
+sintese = "siliconcompiler"
+gds = "siliconcompiler"

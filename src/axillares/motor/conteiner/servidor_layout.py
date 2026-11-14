@@ -49,6 +49,63 @@ def camadas(vista) -> list:
     return lista
 
 
+def tipo_da(forma) -> str:
+    if forma.is_path():
+        return "caminho"
+    return "texto" if forma.is_text() else "polígono"
+
+
+def inspecionar(vista, leiaute, topo, x: float, y: float, raio: float) -> dict:
+    """O que existe no ponto (x, y) µm: as células (instâncias) e as formas por camada."""
+    caixa = pya.DBox(x - raio, y - raio, x + raio, y + raio)
+    caixa_dbu = caixa.to_itype(leiaute.dbu)
+    celulas = []
+    for inst in topo.each_overlapping_inst(caixa_dbu):
+        b = inst.dbbox()
+        nome_inst = ""
+        prop = inst.property(1) or inst.property("INST_NAME") if inst.has_prop_id() else None
+        if prop:
+            nome_inst = str(prop)
+        celulas.append(
+            {
+                "celula": inst.cell.name,
+                "instancia": nome_inst,
+                "caixa": [b.left, b.bottom, b.right, b.top],
+            }
+        )
+    nomes = {}
+    it = vista.begin_layers()
+    while not it.at_end():
+        no = it.current()
+        if not no.has_children():
+            nomes[(no.source_layer, no.source_datatype)] = no.name
+        it.next()
+    formas = []
+    for li in leiaute.layer_indexes():
+        info = leiaute.get_info(li)
+        rec = topo.begin_shapes_rec_touching(li, caixa)
+        while not rec.at_end() and len(formas) < 40:
+            forma = rec.shape()
+            b = forma.dbbox().transformed(rec.dtrans())
+            formas.append(
+                {
+                    "camada": nomes.get(
+                        (info.layer, info.datatype), f"{info.layer}/{info.datatype}"
+                    ),
+                    "fonte": f"{info.layer}/{info.datatype}",
+                    "caixa": [b.left, b.bottom, b.right, b.top],
+                    "tipo": "caminho"
+                    if forma.is_path()
+                    else ("texto" if forma.is_text() else "polígono"),
+                    "texto": forma.text_string if forma.is_text() else "",
+                    "celula": rec.cell().name,
+                }
+            )
+            rec.next()
+    celulas.sort(key=lambda c: (c["caixa"][2] - c["caixa"][0]) * (c["caixa"][3] - c["caixa"][1]))
+    return {"x": x, "y": y, "celulas": celulas[:8], "formas": formas}
+
+
 def principal() -> None:
     gds = globals().get("gds")
     lyp = globals().get("lyp")
@@ -128,6 +185,21 @@ def principal() -> None:
                         "caixa": mostrada,
                         "largura": largura,
                         "altura": altura,
+                    }
+                )
+            elif pedido.get("op") == "inspecionar":
+                responder(
+                    {
+                        "op": "inspecionar",
+                        "id": pedido.get("id"),
+                        **inspecionar(
+                            vista,
+                            leiaute,
+                            topo,
+                            pedido["x"],
+                            pedido["y"],
+                            float(pedido.get("raio", 0.05)),
+                        ),
                     }
                 )
             elif pedido.get("op") == "sair":

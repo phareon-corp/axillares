@@ -1,0 +1,6 @@
+titulo = "Semáforo (máquina de estados)"
+nivel = "intermediário"
+ordem = 4
+descricao = "Uma máquina de estados finitos: verde, amarelo e vermelho, cada um com sua duração. O padrão que controla quase todo chip de verdade."
+aprende = ["máquina de estados (FSM)", "case", "contador de tempo", "localparam"]
+topo_fixo = "semaforo"
