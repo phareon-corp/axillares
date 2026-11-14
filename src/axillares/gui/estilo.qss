@@ -1,0 +1,94 @@
+/*
+ * Axillares — folha de estilo (linguagem Phareon).
+ * Os tokens ($$nome entre chaves) vêm de gui/tema.py. Para substituir esta folha, copie-a para
+ * ~/.config/axillares/estilo.qss e edite. Fontes NÃO são definidas aqui: ficam em
+ * tema.fonte(Papel), porque QSS não tem letter-spacing e sobrescreveria setFont().
+ */
+
+QWidget { color: ${tinta}; selection-background-color: ${acento}; selection-color: ${sobre_acento}; }
+QMainWindow, #raiz { background: ${fundo}; }
+
+/* ---- trilho de navegação ---------------------------------------------------------------- */
+#trilho { background: ${fundo}; border-right: 1px solid ${linha}; }
+#trilho QLabel[tom="3"] { color: ${tinta_3}; }
+
+QPushButton[tipo="nav"] {
+    background: transparent; border: none; border-left: 2px solid transparent;
+    color: ${tinta_2}; text-align: left; padding: 10px 14px 10px 18px;
+}
+QPushButton[tipo="nav"]:hover { color: ${tinta}; background: ${fundo_2}; }
+QPushButton[tipo="nav"]:checked { color: ${tinta}; border-left: 2px solid ${acento}; background: ${fundo_2}; }
+QPushButton[tipo="nav"]:disabled { color: ${tinta_3}; }
+QPushButton[tipo="nav"]:focus { outline: none; }
+
+QPushButton[tipo="segmento"] {
+    background: transparent; border: 1px solid ${linha}; color: ${tinta_2};
+    padding: 6px 4px; border-radius: 0px;
+}
+QPushButton[tipo="segmento"][posicao="inicio"] { border-top-left-radius: ${raio_s}px; border-bottom-left-radius: ${raio_s}px; }
+QPushButton[tipo="segmento"][posicao="fim"] { border-top-right-radius: ${raio_s}px; border-bottom-right-radius: ${raio_s}px; }
+QPushButton[tipo="segmento"]:hover { color: ${tinta}; border-color: ${linha_forte}; }
+QPushButton[tipo="segmento"]:checked { background: ${fundo_3}; color: ${tinta}; border-color: ${linha_forte}; }
+
+/* ---- botões ----------------------------------------------------------------------------- */
+QPushButton[tipo="primario"] {
+    background: ${acento}; color: ${sobre_acento}; border: 1px solid ${acento};
+    border-radius: 22px; padding: 12px 24px; min-height: 18px;
+}
+QPushButton[tipo="primario"]:hover { background: ${acento_brilho}; border-color: ${acento_brilho}; }
+QPushButton[tipo="primario"]:pressed { background: ${acento}; }
+QPushButton[tipo="primario"]:disabled { background: ${fundo_3}; border-color: ${linha}; color: ${tinta_3}; }
+QPushButton[tipo="primario"]:focus { border: 2px solid ${tinta}; }
+
+QPushButton[tipo="fantasma"] {
+    background: transparent; color: ${tinta}; border: 1px solid ${linha_forte};
+    border-radius: 22px; padding: 12px 24px; min-height: 18px;
+}
+QPushButton[tipo="fantasma"]:hover { background: ${tinta}; color: ${fundo}; border-color: ${tinta}; }
+QPushButton[tipo="fantasma"]:disabled { color: ${tinta_3}; border-color: ${linha}; }
+QPushButton[tipo="fantasma"]:focus { border: 2px solid ${acento}; }
+
+QPushButton[tipo="link"] {
+    background: transparent; border: none; color: ${tinta_2}; padding: 2px 0; text-align: left;
+}
+QPushButton[tipo="link"]:hover { color: ${acento}; }
+
+/* ---- tinta ------------------------------------------------------------------------------ */
+QLabel { background: transparent; }
+QLabel[tom="2"] { color: ${tinta_2}; }
+QLabel[tom="3"] { color: ${tinta_3}; }
+QLabel[tom="acento"] { color: ${acento}; }
+QLabel[tom="ok"] { color: ${ok}; }
+QLabel[tom="falha"] { color: ${falha}; }
+QLabel[tom="aviso"] { color: ${aviso}; }
+
+/* ---- superfícies ------------------------------------------------------------------------ */
+QFrame[tipo="grade"] { background: ${linha}; border: 1px solid ${linha}; }
+QFrame[tipo="celula"] { background: ${fundo}; }
+QFrame[tipo="celula"]:hover { background: ${fundo_3}; }
+QFrame[tipo="cartao"] { background: ${fundo_2}; border: 1px solid ${linha}; border-radius: ${raio_l}px; }
+QFrame[tipo="tabela"] { background: transparent; border-top: 1px solid ${linha_forte}; }
+QFrame[tipo="linha-tabela"] { background: transparent; border-bottom: 1px solid ${linha}; }
+QFrame[tipo="linha-tabela"]:hover { background: ${fundo_2}; }
+QFrame[tipo="regua"] { background: ${linha}; border: none; max-height: 1px; min-height: 1px; }
+QFrame[tipo="faixa-progresso"] { background: ${fundo_2}; border-top: 1px solid ${linha}; }
+
+QPlainTextEdit[tipo="log"] {
+    background: ${fundo}; color: ${tinta_2}; border: 1px solid ${linha}; border-radius: ${raio_s}px;
+    padding: 8px;
+}
+
+/* ---- rolagem e progresso ---------------------------------------------------------------- */
+QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }
+QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }
+QScrollBar::handle:vertical { background: ${linha_forte}; border-radius: 3px; min-height: 40px; }
+QScrollBar::handle:vertical:hover { background: ${tinta_3}; }
+QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page { background: none; height: 0; }
+
+QProgressBar { background: ${linha}; border: none; border-radius: 1px; max-height: 2px; min-height: 2px; }
+QProgressBar::chunk { background: ${acento}; border-radius: 1px; }
+
+QToolTip {
+    background: ${fundo_3}; color: ${tinta}; border: 1px solid ${linha_forte};
+    padding: 6px 8px; font-family: "${fam_corpo}"; font-size: 12px;
+}

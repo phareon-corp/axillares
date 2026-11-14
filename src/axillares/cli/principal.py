@@ -33,5 +33,20 @@ def versao() -> None:
     console.print(f"[dim]Python {platform.python_version()} · {platform.system()}[/dim]")
 
 
+@app.command("gui")
+def gui() -> None:
+    """Abre a interface gráfica."""
+    try:
+        from axillares.gui.app import principal
+    except ImportError as erro:
+        console.print(
+            "[bold red]✕[/] A interface gráfica precisa do PySide6, que não está instalado."
+        )
+        console.print("  → Instale com: [bold]pip install 'axillares[gui]'[/]")
+        console.print(f"  [dim]{erro}[/dim]")
+        raise typer.Exit(1) from erro
+    raise typer.Exit(principal())
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()
