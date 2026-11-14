@@ -8,6 +8,7 @@ import typer
 from rich.console import Console
 
 from axillares import __version__
+from axillares.cli import ambiente
 
 app = typer.Typer(
     name="axil",
@@ -17,6 +18,7 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 console = Console()
+app.add_typer(ambiente.app, name="ambiente")
 
 
 @app.callback()

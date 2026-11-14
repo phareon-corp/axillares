@@ -1,0 +1,101 @@
+# Perfil de toolchain do Axillares.
+#
+# Um perfil é uma promessa verificável: "com esta imagem, estas ferramentas, nestas versões".
+# A imagem é fixada por digest (nunca por tag): a tag é só informativa.
+# As versões esperadas foram lidas da própria imagem em 2026-11-13; as saídas brutas estão em
+# tests/fixtures/versoes/. Atualizar o perfil é tarefa consciente: novo arquivo, nova versão.
+
+nome = "iic-osic"
+versao = "2026.10"
+descricao = "Fluxo aberto completo (sky130/gf180/ihp-sg13g2): síntese, simulação, P&R, sign-off e FPGA iCE40/ECP5."
+
+[imagem]
+repositorio = "docker.io/hpretl/iic-osic-tools"
+tag = "2026.10"
+digest = "sha256:306585de35d198e70ea58950f77147c86f56c698726a19afea9f1c83009557be"
+camadas = 62
+tamanho_gb = 4.0
+caminhos = ["/foss/tools/bin", "/foss/tools/klayout"]
+
+# --- Dentro do contêiner -------------------------------------------------------------------
+
+[[ferramentas]]
+nome = "yosys"
+descricao = "síntese lógica"
+origem = "conteiner"
+versao = "0.70"
+comando = ["yosys", "-V"]
+expressao = 'Yosys (\d+\.\d+(?:\+\d+)?)'
+
+[[ferramentas]]
+nome = "iverilog"
+descricao = "simulação Verilog (Icarus)"
+origem = "conteiner"
+versao = "14.0"
+comando = ["iverilog", "-V"]
+expressao = 'Icarus Verilog version (\d+\.\d+)'
+
+[[ferramentas]]
+nome = "verilator"
+descricao = "simulação e lint Verilog"
+origem = "conteiner"
+versao = "5.052"
+comando = ["verilator", "--version"]
+expressao = 'Verilator (\d+\.\d+)'
+
+[[ferramentas]]
+nome = "nextpnr"
+descricao = "place and route de FPGA (iCE40)"
+origem = "conteiner"
+versao = "0.11.1"
+comando = ["nextpnr-ice40", "--version"]
+expressao = 'nextpnr-(\d+\.\d+(?:\.\d+)?)'
+
+[[ferramentas]]
+nome = "openroad"
+descricao = "floorplan, posicionamento e roteamento ASIC"
+origem = "conteiner"
+versao = "26Q4-407-geb14e40b7"
+comando = ["openroad", "-version"]
+expressao = '^\s*(\S+)'
+
+[[ferramentas]]
+nome = "magic"
+descricao = "layout, DRC e extração"
+origem = "conteiner"
+versao = "8.3.685"
+comando = ["magic", "--version"]
+expressao = '^\s*(\d+\.\d+\.\d+)'
+
+[[ferramentas]]
+nome = "netgen"
+descricao = "LVS (layout contra netlist)"
+origem = "conteiner"
+versao = "1.5.324"
+comando = ["sh", "-c", "echo quit | netgen -batch"]
+expressao = 'Netgen (\d+\.\d+\.\d+)'
+
+# --- Nativas: interfaces gráficas abertas na máquina do usuário ---------------------------
+# Não são essenciais para o fluxo; sem elas o Axillares só não abre o GDS e a onda com um clique.
+
+[[ferramentas]]
+nome = "klayout"
+descricao = "visualizador de layout GDS"
+origem = "nativa"
+versao = "0.29.0"
+comparacao = "minima"
+essencial = false
+comando = ["klayout", "-v"]
+expressao = 'KLayout (\d+\.\d+(?:\.\d+)?)'
+pacote = "klayout"
+
+[[ferramentas]]
+nome = "surfer"
+descricao = "visualizador de formas de onda"
+origem = "nativa"
+versao = "0.3.0"
+comparacao = "minima"
+essencial = false
+comando = ["surfer", "--version"]
+expressao = 'surfer (\d+\.\d+\.\d+)'
+instrucao = "Baixe o binário para Linux em https://surfer-project.org e coloque-o numa pasta do PATH (por exemplo ~/.local/bin)."
