@@ -13,6 +13,7 @@ Princípios herdados da Phareon:
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import asdict, dataclass
 from enum import Enum, StrEnum
 from pathlib import Path
@@ -173,6 +174,26 @@ class Papel(Enum):
     ETIQUETA = Estilo(Familia.MONO, 10, 500, 0.15, caixa_alta=True)
     MONO = Estilo(Familia.MONO, 12, 400, 0.04)
     NAV = Estilo(Familia.MONO, 11, 500, 0.12, caixa_alta=True)
+
+
+# Unidades mantêm a grafia em texto de caixa alta: "µm" virar "ΜM" (≈ "MM") seria um erro de
+# mil vezes num app de engenharia; "MHz" e "ns" também não mudam de forma.
+UNIDADES = {
+    "µm²", "µm", "nm", "mm²", "mm", "MHz", "GHz", "kHz", "Hz", "ns", "ps", "µs", "ms",
+    "mW", "µW", "nW", "mV", "µA", "mA", "dB", "fF", "pF", "kΩ", "Ω",
+}  # fmt: skip
+_TOKEN = re.compile(r"(\s+|[()/,·:;=×]+)")
+
+
+def caixa_alta(texto: str) -> str:
+    """Caixa alta que preserva unidades (µm, MHz, ns…) e o µ."""
+    partes = []
+    for pedaco in _TOKEN.split(texto):
+        if pedaco in UNIDADES:
+            partes.append(pedaco)
+        else:
+            partes.append("".join(c if c == "µ" else c.upper() for c in pedaco))
+    return "".join(partes)
 
 
 def fonte(papel: Papel) -> QFont:

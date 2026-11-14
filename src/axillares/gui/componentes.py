@@ -34,11 +34,26 @@ def repolir(w: QWidget) -> None:
     w.update()
 
 
+class Rotulo(QLabel):
+    """QLabel que aplica a caixa alta do papel ao texto (preservando unidades), em vez de
+    deixar a fonte capitalizar — o que transformaria "µm" em "ΜM"."""
+
+    def __init__(self, texto: str, papel: Papel) -> None:
+        super().__init__()
+        self._caixa_alta = papel.value.caixa_alta
+        f = t.fonte(papel)
+        f.setCapitalization(f.Capitalization.MixedCase)
+        self.setFont(f)
+        self.setText(texto)
+
+    def setText(self, texto: str) -> None:
+        super().setText(t.caixa_alta(texto) if self._caixa_alta and "<" not in texto else texto)
+
+
 def rotulo(
     texto: str = "", papel: Papel = Papel.CORPO, tom: str | None = None, rico: bool = False
 ) -> QLabel:
-    r = QLabel(texto)
-    r.setFont(t.fonte(papel))
+    r = Rotulo(texto, papel)
     if tom:
         r.setProperty("tom", tom)
     r.setTextFormat(Qt.TextFormat.RichText if rico else Qt.TextFormat.PlainText)
@@ -158,21 +173,22 @@ class Pilula(QWidget):
 
     def __init__(self, texto: str = "", token: str = "tinta_3") -> None:
         super().__init__()
-        self._texto = texto
+        self._texto = t.caixa_alta(texto)
         self._token = token
         self._fonte = t.fonte(Papel.ETIQUETA)
+        self._fonte.setCapitalization(self._fonte.Capitalization.MixedCase)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         t.tema().mudou.connect(lambda _p: self.update())
 
     def definir(self, texto: str, token: str) -> None:
-        self._texto, self._token = texto, token
+        self._texto, self._token = t.caixa_alta(texto), token
         self.updateGeometry()
         self.update()
 
     def sizeHint(self) -> QSize:
         from PySide6.QtGui import QFontMetrics
 
-        largura = QFontMetrics(self._fonte).horizontalAdvance(self._texto.upper())
+        largura = QFontMetrics(self._fonte).horizontalAdvance(self._texto)
         return QSize(largura + 34, 22)
 
     def paintEvent(self, _e: QPaintEvent) -> None:

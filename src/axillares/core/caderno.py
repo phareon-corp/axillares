@@ -45,6 +45,7 @@ class RegistroExecucao(BaseModel):
     etapa: Etapa
     motor: str
     versao_motor: str
+    pdk: str = ""
     comando: list[str] = Field(default_factory=list)
     hash_rtl: str
     inicio: datetime
@@ -137,6 +138,7 @@ class Caderno:
             etapa=andamento.etapa,
             motor=andamento.motor,
             versao_motor=andamento.versao_motor,
+            pdk=andamento.projeto.asic.pdk.value,
             comando=comando,
             hash_rtl=andamento.hash_rtl,
             inicio=andamento.inicio,

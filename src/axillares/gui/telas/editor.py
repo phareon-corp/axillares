@@ -379,7 +379,7 @@ class TelaEditor(QWidget):
         self.atual = caminho
         projeto = self.sessao.projeto
         rel = projeto.relativo(caminho) if projeto else caminho.name
-        self.caminho.setText(f"{projeto.nome if projeto else ''} / {rel}".upper())
+        self.caminho.setText(f"{projeto.nome if projeto else ''} / {rel}")
         self._atualizar_abas()
 
     def _atualizar_abas(self) -> None:
@@ -432,7 +432,7 @@ class TelaEditor(QWidget):
 
     def _cursor_mudou(self, linha: int, coluna: int, linguagem: str) -> None:
         self.posicao.setText(f"LN {linha}, COL {coluna}")
-        self.linguagem.setText(NOMES_LINGUAGEM.get(linguagem, linguagem).upper())
+        self.linguagem.setText(NOMES_LINGUAGEM.get(linguagem, linguagem))
 
     def _salvar(self, caminho: Path, texto: str, versao: int) -> None:
         projeto = self.sessao.projeto
@@ -520,7 +520,7 @@ class TelaEditor(QWidget):
 
     def _tique(self) -> None:
         decorrido = fmt.duracao(time.monotonic() - self._inicio)
-        self.estado_execucao.setText(f"{self._passo.upper()}   {decorrido}")
+        self.estado_execucao.setText(f"{self._passo}   {decorrido}")
 
     def _execucao_concluida(self, r: RegistroExecucao) -> None:
         self._relogio.stop()
@@ -536,7 +536,7 @@ class TelaEditor(QWidget):
         m = r.metrica("fmax_mhz")
         if m and r.situacao is Situacao.SUCESSO:
             resumo += f" · Fmax {fmt.numero(m.valor, 1)} MHz"
-        self.estado_execucao.setText(resumo.upper())
+        self.estado_execucao.setText(resumo)
         locais = r.falha.locais if r.falha else []
         self.mostrar_problemas(locais)
 

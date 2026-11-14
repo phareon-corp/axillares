@@ -334,3 +334,41 @@ def abrir(
         console.print(painel_diagnostico(diag))
         raise typer.Exit(1)
     console.print(f"[green]✓[/] Abrindo {gds.nome} da execução #{r.numero} no KLayout.")
+
+
+# --- layout -------------------------------------------------------------------------------
+
+
+def layout(
+    referencia: str = typer.Argument("ultima", help="Execução: número, prefixo, ultima…"),
+    saida: Path = typer.Option(Path("layout.png"), "--saida", "-o", help="Imagem PNG a gravar."),
+    largura: int = typer.Option(1600, "--largura", help="Largura em pixels."),
+    altura: int = typer.Option(1200, "--altura", help="Altura em pixels."),
+    pasta: Path | None = OpcaoProjeto,
+) -> None:
+    """Desenha o layout (GDS) de uma execução numa imagem, pelo KLayout da imagem de ferramentas."""
+    from axillares.motor.base import ErroMotor
+    from axillares.motor.layout import RenderizadorLayout
+
+    projeto = _projeto(pasta)
+    try:
+        r = Caderno(projeto.dir_runs).resolver(referencia)
+    except ErroCaderno as erro:
+        raise _erro(str(erro)) from erro
+    gds = next((a for a in r.artefatos if a.tipo is TipoArtefato.GDS), None)
+    if gds is None or r.diretorio is None:
+        raise _erro(f"A execução #{r.numero} não tem GDS. Só a etapa gds bem-sucedida produz um.")
+    pdk = r.pdk or projeto.asic.pdk.value
+    try:
+        with RenderizadorLayout(r.diretorio / gds.caminho, pdk) as render:
+            info = render.iniciar()
+            imagem = render.renderizar(largura, altura, fundo="#08080B")
+            saida.write_bytes(imagem.arquivo.read_bytes())
+    except ErroMotor as erro:
+        raise _erro(str(erro), 1) from erro
+    x1, y1, x2, y2 = info.caixa
+    console.print(
+        f"[green]✓[/] {saida}  [dim]célula {info.celula} · "
+        f"{fmt.numero(x2 - x1, 2)} × {fmt.numero(y2 - y1, 2)} µm · {len(info.camadas)} camadas · "
+        f"PDK {pdk}[/]"
+    )

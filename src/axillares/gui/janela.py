@@ -29,20 +29,22 @@ from axillares.gui.telas.abertura import TelaAbertura
 from axillares.gui.telas.comparar import TelaComparar
 from axillares.gui.telas.editor import TelaEditor
 from axillares.gui.telas.execucoes import TelaExecucoes
+from axillares.gui.telas.layout import TelaLayout
 from axillares.gui.telas.projeto import TelaProjeto
 from axillares.gui.tema import Espaco, Modo, Papel
 from axillares.motor import Motor, obter_motor
 
 ICONE = t.PASTA / "icones" / "axillares.svg"
 
-ABERTURA, PROJETO, EDITOR, EXECUCOES, COMPARAR = range(5)
+ABERTURA, PROJETO, EDITOR, EXECUCOES, LAYOUT, COMPARAR = range(6)
 # (número, nome, precisa de projeto aberto)
 SECOES = (
     ("01", "Abertura", False),
     ("02", "Projeto", False),
     ("03", "Editor", True),
     ("04", "Execuções", True),
-    ("05", "Comparar", True),
+    ("05", "Layout", True),
+    ("06", "Comparar", True),
 )
 
 
@@ -89,7 +91,7 @@ class Trilho(QFrame):
         self.projeto.setContentsMargins(Espaco.M + 2, 0, Espaco.M, 0)
         self.projeto.setWordWrap(True)
         lay.addWidget(self.projeto)
-        breve = rotulo("06   Trilha · em breve", Papel.ROTULO, "3")
+        breve = rotulo("07   Trilha · em breve", Papel.ROTULO, "3")
         breve.setContentsMargins(Espaco.M + 2, Espaco.M, Espaco.M, 0)
         lay.addWidget(breve)
 
@@ -198,8 +200,16 @@ class JanelaPrincipal(QMainWindow):
         self.projeto = TelaProjeto(self.sessao)
         self.editor = TelaEditor(self.sessao, fabrica_editor)
         self.execucoes = TelaExecucoes(self.sessao)
+        self.layout_ = TelaLayout(self.sessao)
         self.comparar = TelaComparar(self.sessao)
-        for tela in (self.abertura, self.projeto, self.editor, self.execucoes, self.comparar):
+        for tela in (
+            self.abertura,
+            self.projeto,
+            self.editor,
+            self.execucoes,
+            self.layout_,
+            self.comparar,
+        ):
             self.pilha.addWidget(tela)
 
         self.trilho.grupo.idClicked.connect(self.ir_para)
@@ -223,6 +233,8 @@ class JanelaPrincipal(QMainWindow):
         self.trilho.grupo.button(indice).setChecked(True)
         if indice == ABERTURA:
             self.abertura.carregar_recentes()
+        elif indice == LAYOUT and self.layout_.render is None:
+            self.layout_.recarregar()
 
     def abrir_no_editor(self, caminho: Path, linha: int = 0, coluna: int = 1) -> None:
         self.ir_para(EDITOR)
@@ -241,9 +253,13 @@ class JanelaPrincipal(QMainWindow):
         if nome == "execucao":
             self.execucoes.abrir(str(argumento))
             self.ir_para(EXECUCOES)
+        elif nome == "layout":
+            self.layout_.mostrar_execucao(str(argumento))
+            self.ir_para(LAYOUT)
 
     def closeEvent(self, evento: QCloseEvent) -> None:
         self.abertura.encerrar()
+        self.layout_.encerrar()
         self.sessao.encerrar()
         tarefas.esperar_todas()
         super().closeEvent(evento)

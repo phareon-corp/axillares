@@ -26,6 +26,16 @@ fusesoc = "2.4.7"
 librelane = "3.1.0.dev3"
 cocotb = "2.1.0"
 
+# Propriedades de camada do KLayout de cada PDK, dentro da imagem (cores e nomes no visualizador
+# de layout embutido). Verificado em 2026-11-14.
+[camadas]
+skywater130 = "/foss/pdks/sky130A/libs.tech/klayout/tech/sky130A.lyp"
+gf180 = "/foss/pdks/gf180mcuD/libs.tech/klayout/tech/gf180mcu.lyp"
+ihp130 = "/foss/pdks/ihp-sg13g2/libs.tech/klayout/tech/sg13g2.lyp"
+
+[visualizador]
+klayout = "/foss/tools/klayout/klayout"
+
 # --- Dentro do contêiner -------------------------------------------------------------------
 
 [[ferramentas]]

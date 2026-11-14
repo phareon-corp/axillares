@@ -206,11 +206,17 @@ class DetalheExecucao(QWidget):
         self.pilula = Pilula("", "tinta_3")
         lado.addWidget(self.pilula, 0, Qt.AlignmentFlag.AlignRight)
         acoes = QHBoxLayout()
-        self.botao_gds = botao("Abrir GDS no KLayout", "primario")
-        self.botao_gds.clicked.connect(self._abrir_gds)
+        self.botao_gds = botao("Ver layout  →", "primario")
+        self.botao_gds.clicked.connect(
+            lambda: self.registro and self.sessao.pedir_tela.emit("layout", self.registro.id)
+        )
+        self.botao_klayout = botao("KLayout externo", "fantasma")
+        self.botao_klayout.setToolTip("Abre o GDS no KLayout instalado na máquina, fora do app.")
+        self.botao_klayout.clicked.connect(self._abrir_gds)
         self.botao_pasta = botao("Mostrar na pasta", "fantasma")
         self.botao_pasta.clicked.connect(self._abrir_pasta)
         acoes.addWidget(self.botao_pasta)
+        acoes.addWidget(self.botao_klayout)
         acoes.addWidget(self.botao_gds)
         lado.addLayout(acoes)
         topo.addLayout(lado)
@@ -291,6 +297,7 @@ class DetalheExecucao(QWidget):
         texto, token = tom_da_situacao(r.situacao)
         self.pilula.definir(texto, token)
         self.botao_gds.setVisible(self._gds() is not None)
+        self.botao_klayout.setVisible(self._gds() is not None)
 
         while self.aviso.count():
             item = self.aviso.takeAt(0)
@@ -338,8 +345,8 @@ class DetalheExecucao(QWidget):
         for a in r.artefatos:
             acao: QWidget | str = ""
             if a.tipo is TipoArtefato.GDS:
-                b = botao("Abrir no KLayout", "link")
-                b.clicked.connect(self._abrir_gds)
+                b = botao("Ver layout", "link")
+                b.clicked.connect(lambda: self.sessao.pedir_tela.emit("layout", r.id))
                 acao = b
             self.artefatos.adicionar(
                 [a.caminho.as_posix(), a.tipo.value, fmt.tamanho(a.bytes), acao],

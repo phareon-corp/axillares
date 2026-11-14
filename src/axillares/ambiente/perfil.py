@@ -87,6 +87,12 @@ class Perfil(_Modelo):
     motores: dict[str, str] = Field(
         default_factory=dict, description="Versões dos orquestradores dentro da imagem."
     )
+    camadas: dict[str, str] = Field(
+        default_factory=dict, description="Arquivo .lyp do KLayout por PDK, dentro da imagem."
+    )
+    visualizador: dict[str, str] = Field(
+        default_factory=dict, description="Executáveis usados para visualizar, dentro da imagem."
+    )
     ferramentas: list[Ferramenta] = Field(min_length=1)
 
     @property
