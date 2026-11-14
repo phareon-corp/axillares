@@ -65,6 +65,20 @@ def _segmentos(opcoes: list[tuple[str, object]], ao_mudar) -> tuple[QHBoxLayout,
 # --- lista ------------------------------------------------------------------------------------
 
 
+DESTAQUES_ASIC = (
+    ("fmax_mhz", "Frequência máxima"),
+    ("area_total_um2", "Área total"),
+    ("celulas", "Células"),
+    ("folga_setup_ns", "Folga de setup"),
+)
+DESTAQUES_FPGA = (
+    ("fmax_mhz", "Frequência máxima"),
+    ("celulas_logicas", "Células lógicas"),
+    ("flipflops", "Flip-flops"),
+    ("folga_fmax_mhz", "Sobra de frequência"),
+)
+
+
 class ListaExecucoes(QWidget):
     abrir = Signal(str)
     comparar = Signal(str, str)
@@ -320,7 +334,10 @@ class DetalheExecucao(QWidget):
                 )
             )
 
-        for chave, celula in self.celulas.items():
+        # o destaque muda com a etapa: num FPGA não há área de silício nem folga em ns
+        destaques = DESTAQUES_FPGA if r.etapa is Etapa.FPGA else DESTAQUES_ASIC
+        for (chave, titulo), celula in zip(destaques, self.celulas.values(), strict=True):
+            celula._rotulo.setText(titulo)
             m = r.metrica(chave)
             if m:
                 celula.definir(fmt.numero(m.valor, fmt.casas_para(chave, m.valor)), m.unidade,

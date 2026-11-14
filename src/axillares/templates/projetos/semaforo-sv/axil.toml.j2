@@ -1,0 +1,38 @@
+# Projeto Axillares — {{ nome }}
+
+[projeto]
+nome = "{{ nome }}"
+topo = "semaforo"
+descricao = "Semáforo em SystemVerilog: enum, always_ff e always_comb."
+
+[fontes]
+rtl = ["rtl/**/*.sv", "rtl/**/*.v"]
+testbenches = ["tb/**/*.sv"]
+sdc = "restricoes/semaforo.sdc"
+
+[asic]
+pdk = "{{ pdk }}"          # skywater130 · gf180 · ihp130
+frequencia_mhz = {{ frequencia_mhz }}
+relogio = "clk"
+
+[fpga]
+placa = "icebreaker"        # icebreaker · ulx3s  (veja: axil placas)
+
+[fpga.pinos.icebreaker]
+clk = "clk"
+rst_n = "btn0"
+verde = "led0"
+amarelo = "led1"
+vermelho = "led2"
+
+[fpga.pinos.ulx3s]
+clk = "clk"
+rst_n = "btn0"
+verde = "led0"
+amarelo = "led1"
+vermelho = "led2"
+
+[motores]
+sintese = "siliconcompiler"
+gds = "siliconcompiler"
+fpga = "edalize"

@@ -1,0 +1,28 @@
+nome = "ULX3S"
+fabricante = "Radiona"
+familia = "ecp5"
+dispositivo = "85k"
+pacote = "CABGA381"
+relogio_mhz = 25
+restricoes = "lpf"
+fluxo = "trellis"
+bitstream = ".bit"
+gravacao = "openFPGALoader -b ulx3s {bitstream}"
+descricao = "Lattice ECP5 85F: 84 mil células lógicas, memória, DSP — espaço para projetos grandes."
+# Pinagem conferida em 2026-11-14 contra o arquivo oficial:
+fonte = "https://github.com/emard/ulx3s/blob/master/doc/constraints/ulx3s_v20.lpf"
+
+[recursos]
+clk  = { pino = "G2", nota = "oscilador de 25 MHz (clk_25mhz)" }
+btn0 = { pino = "D6", nota = "botão PWR, ativo em nível baixo — bom para rst_n", pull = "UP" }
+btn1 = { pino = "R1", nota = "FIRE1", pull = "DOWN" }
+btn2 = { pino = "T1", nota = "FIRE2", pull = "DOWN" }
+btn3 = { pino = "R18", nota = "UP", pull = "DOWN" }
+led0 = { pino = "B2" }
+led1 = { pino = "C2" }
+led2 = { pino = "C1" }
+led3 = { pino = "D2" }
+led4 = { pino = "D1" }
+led5 = { pino = "E2" }
+led6 = { pino = "E1" }
+led7 = { pino = "H3" }

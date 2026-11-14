@@ -74,6 +74,10 @@ def etapa(etapa_: Etapa) -> ResumoEtapa:
 
 
 def metrica(chave: str) -> ExplicacaoMetrica | None:
+    if chave.startswith("fmax_mhz_"):  # um por domínio de relógio: fmax_mhz_clk, fmax_mhz_pix…
+        chave = "fmax_mhz_relogio"
+    if chave.startswith("uso_"):  # tipos de bloco raros, sem explicação própria
+        return None
     dados = _ler("metricas.toml").get(chave)
     return ExplicacaoMetrica(**dados) if dados else None
 

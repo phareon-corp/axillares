@@ -15,6 +15,38 @@ pdk = "{{ pdk }}"          # skywater130 · gf180 · ihp130
 frequencia_mhz = {{ frequencia_mhz }}
 relogio = "clk"
 
+[fpga]
+placa = "icebreaker"        # icebreaker · ulx3s  (veja: axil placas)
+
+# porta do módulo de topo → recurso da placa
+[fpga.pinos.icebreaker]
+clk = "clk"
+rst_n = "btn0"
+"entrada[0]" = "btn1"
+"entrada[1]" = "btn2"
+"entrada[2]" = "btn3"
+"saida[0]" = "led0"
+"saida[1]" = "led1"
+"saida[2]" = "led2"
+"saida[3]" = "led3"
+"saida[4]" = "led4"
+
+[fpga.pinos.ulx3s]
+clk = "clk"
+rst_n = "btn0"
+"entrada[0]" = "btn1"
+"entrada[1]" = "btn2"
+"entrada[2]" = "btn3"
+"saida[0]" = "led0"
+"saida[1]" = "led1"
+"saida[2]" = "led2"
+"saida[3]" = "led3"
+"saida[4]" = "led4"
+"saida[5]" = "led5"
+"saida[6]" = "led6"
+"saida[7]" = "led7"
+
 [motores]
 sintese = "siliconcompiler"
 gds = "siliconcompiler"
+fpga = "edalize"

@@ -98,3 +98,56 @@ leitura = "Avisos não impedem o chip; leia os do log se algo parecer estranho."
 [duracao_fluxo_s]
 o_que = "Quanto tempo o motor levou para executar."
 leitura = "Informativo."
+
+# --- FPGA (relatório do nextpnr) --------------------------------------------------------------
+[fmax_alvo_mhz]
+o_que = "A frequência do relógio da placa, que o circuito precisa aguentar."
+leitura = "Fixa por placa: 12 MHz no iCEBreaker, 25 MHz na ULX3S."
+
+[folga_fmax_mhz]
+o_que = "Quanto a frequência máxima alcançada passa da exigida."
+leitura = "Positiva: funciona na placa. Negativa: a temporização falhou."
+
+[fmax_mhz_relogio]
+o_que = "A frequência máxima de um domínio de relógio específico."
+leitura = "Cada relógio do circuito tem a sua; a pior manda."
+
+[celulas_logicas]
+o_que = "Quantas células lógicas (LUTs, e no iCE40 também o flip-flop junto) o circuito ocupa."
+leitura = "É o tamanho do circuito na FPGA."
+
+[celulas_logicas_pct]
+o_que = "As células lógicas usadas, em porcentagem do que o dispositivo tem."
+leitura = "Abaixo de 80 % o roteamento costuma fechar com folga."
+
+[flipflops]
+o_que = "Quantos flip-flops (bits de memória) o circuito usa na FPGA."
+leitura = "Deve bater com os registradores do seu Verilog."
+
+[flipflops_pct]
+o_que = "Os flip-flops usados, em porcentagem do dispositivo."
+leitura = "Informativo."
+
+[memorias_bram]
+o_que = "Quantos blocos de memória interna (BRAM) o circuito usa."
+leitura = "Aparecem quando há vetores de memória grandes no RTL."
+
+[memorias_bram_pct]
+o_que = "Os blocos de memória usados, em porcentagem do dispositivo."
+leitura = "Informativo."
+
+[dsps]
+o_que = "Quantos multiplicadores dedicados (DSP) o circuito usa."
+leitura = "Aparecem quando há multiplicação no RTL."
+
+[dsps_pct]
+o_que = "Os DSPs usados, em porcentagem do dispositivo."
+leitura = "Informativo."
+
+[pinos_fpga]
+o_que = "Quantos pinos de entrada e saída da FPGA o circuito usa."
+leitura = "Bate com as portas do módulo de topo."
+
+[pinos_fpga_pct]
+o_que = "Os pinos usados, em porcentagem dos disponíveis no encapsulamento."
+leitura = "Informativo."

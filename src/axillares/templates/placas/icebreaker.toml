@@ -1,0 +1,29 @@
+# Placa FPGA descrita como dado: acrescentar uma placa é escrever um arquivo destes.
+nome = "iCEBreaker"
+fabricante = "1BitSquared"
+familia = "ice40"
+dispositivo = "up5k"
+pacote = "sg48"
+relogio_mhz = 12
+restricoes = "pcf"
+fluxo = "icestorm"
+bitstream = ".bin"
+gravacao = "iceprog {bitstream}"
+descricao = "Lattice iCE40 UP5K: 5280 células lógicas, a placa aberta mais usada para aprender."
+# Pinagem conferida em 2026-11-14 contra o arquivo oficial:
+fonte = "https://github.com/icebreaker-fpga/icebreaker-verilog-examples/blob/main/icebreaker/icebreaker.pcf"
+
+# recurso genérico → pino. Os projetos mapeiam as portas do módulo de topo nestes nomes.
+[recursos]
+clk  = { pino = "35", nota = "oscilador de 12 MHz" }
+btn0 = { pino = "10", nota = "botão da placa (BTN_N), ativo em nível baixo — bom para rst_n" }
+btn1 = { pino = "20", nota = "BTN1 da placa destacável (PMOD 2)" }
+btn2 = { pino = "19", nota = "BTN2 da placa destacável (PMOD 2)" }
+btn3 = { pino = "18", nota = "BTN3 da placa destacável (PMOD 2)" }
+led0 = { pino = "26", nota = "LED1 da placa destacável (PMOD 2)" }
+led1 = { pino = "27", nota = "LED2 da placa destacável (PMOD 2)" }
+led2 = { pino = "25", nota = "LED3 da placa destacável (PMOD 2)" }
+led3 = { pino = "23", nota = "LED4 da placa destacável (PMOD 2)" }
+led4 = { pino = "21", nota = "LED5 da placa destacável (PMOD 2)" }
+led_vermelho_n = { pino = "11", nota = "LED vermelho da placa, aceso em nível baixo" }
+led_verde_n = { pino = "37", nota = "LED verde da placa, aceso em nível baixo" }

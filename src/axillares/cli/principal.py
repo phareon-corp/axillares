@@ -26,6 +26,7 @@ app.command("runs")(projeto.runs)
 app.command("comparar")(projeto.comparar_cmd)
 app.command("abrir")(projeto.abrir)
 app.command("layout")(projeto.layout)
+app.command("placas")(projeto.placas_cmd)
 
 
 @app.callback()

@@ -18,6 +18,22 @@ relogio = "virtual"
 # certo"; fixamos 40 × 40 µm.
 chip_um = [40, 40]
 
+[fpga]
+placa = "icebreaker"        # icebreaker · ulx3s  (veja: axil placas)
+
+[fpga.pinos.icebreaker]
+a = "btn1"
+b = "btn2"
+soma = "led0"
+vai_um = "led1"
+
+[fpga.pinos.ulx3s]
+a = "btn1"
+b = "btn2"
+soma = "led0"
+vai_um = "led1"
+
 [motores]
 sintese = "siliconcompiler"
 gds = "siliconcompiler"
+fpga = "edalize"

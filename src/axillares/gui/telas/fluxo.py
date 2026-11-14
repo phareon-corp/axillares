@@ -77,14 +77,18 @@ class CartaoPasso(QFrame):
 
 
 class FluxoExplicado(GradeResponsiva):
-    """Grade com os passos do fluxo GDS; os da síntese vêm primeiro e valem para as duas."""
+    """Grade com os passos de um fluxo. ASIC: os do GDS, com os da síntese primeiro (valem para
+    as duas etapas). FPGA: síntese para FPGA, posicionamento e roteamento, bitstream."""
 
-    def __init__(self) -> None:
+    def __init__(self, familia: str = "asic") -> None:
         super().__init__(min_coluna=260, max_colunas=COLUNAS)
+        self.familia = familia
         da_sintese = {p.id for p in ex.etapa(Etapa.SINTESE).passos}
+        base = Etapa.FPGA if familia == "fpga" else Etapa.GDS
         self.cartoes: dict[str, CartaoPasso] = {}
-        for i, passo in enumerate(ex.etapa(Etapa.GDS).passos):
-            c = CartaoPasso(i + 1, passo, passo.id not in da_sintese)
+        for i, passo in enumerate(ex.etapa(base).passos):
+            so_gds = familia == "asic" and passo.id not in da_sintese
+            c = CartaoPasso(i + 1, passo, so_gds)
             self.adicionar(c)
             self.cartoes[passo.id] = c
         self._ordem = list(self.cartoes)

@@ -16,12 +16,14 @@ class Etapa(StrEnum):
 
     SINTESE = "sintese"
     GDS = "gds"
+    FPGA = "fpga"
 
     @property
     def descricao(self) -> str:
         return {
             Etapa.SINTESE: "síntese lógica e temporização estimada",
             Etapa.GDS: "fluxo físico completo, do RTL ao GDSII",
+            Etapa.FPGA: "síntese, posicionamento e roteamento numa FPGA, até o bitstream",
         }[self]
 
 
@@ -40,6 +42,8 @@ class TipoArtefato(StrEnum):
     SDF = "sdf"
     IMAGEM = "imagem"
     MANIFESTO = "manifesto"
+    BITSTREAM = "bitstream"
+    RELATORIO = "relatorio"
     OUTRO = "outro"
 
 

@@ -1,0 +1,4 @@
+# Relógio de {{ frequencia_mhz }} MHz (período de {{ periodo_ns }} ns).
+create_clock -name clk -period {{ periodo_ns }} [get_ports {clk}]
+set_input_delay {{ atraso_ns }} -clock clk [all_inputs]
+set_output_delay {{ atraso_ns }} -clock clk [all_outputs]

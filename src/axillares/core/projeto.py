@@ -86,12 +86,17 @@ class SecaoAsic(_Secao):
 
 
 class SecaoFpga(_Secao):
-    placa: str | None = Field(default=None, description="Chega com a fase F5.")
+    placa: str | None = Field(default=None, description="Placa alvo (templates/placas/<id>.toml).")
+    pinos: dict[str, dict[str, str]] = Field(
+        default_factory=dict,
+        description="Por placa: porta do módulo de topo → recurso da placa (clk, btn0, led3…).",
+    )
 
 
 class SecaoMotores(_Secao):
     sintese: str = "siliconcompiler"
     gds: str = "siliconcompiler"
+    fpga: str = "edalize"
 
     def para(self, etapa: Etapa) -> str:
         return getattr(self, etapa.value)
@@ -225,3 +230,35 @@ def _traduzir(e: dict) -> str:
     if tipo in {"greater_than", "less_than_equal"}:
         return f"valor fora da faixa ({e.get('msg', '')})"
     return e.get("msg", "valor inválido")
+
+
+def definir_placa(raiz: Path, placa: str) -> None:
+    """Troca a placa em [fpga] do axil.toml, preservando o resto do arquivo (e os comentários)."""
+    import re
+    import tempfile
+
+    from axillares.core.placas import ErroPlaca, carregar
+
+    try:
+        carregar(placa)
+    except ErroPlaca as erro:
+        raise ErroProjeto(str(erro)) from erro
+    arquivo = Path(raiz) / ARQUIVO
+    texto = arquivo.read_text(encoding="utf-8")
+    secao = re.search(r"^\[fpga\]\s*$", texto, flags=re.MULTILINE)
+    linha_nova = f'placa = "{placa}"'
+    if secao is None:
+        texto = texto.rstrip("\n") + f"\n\n[fpga]\n{linha_nova}\n"
+    else:
+        fim = re.search(r"^\[", texto[secao.end() :], flags=re.MULTILINE)
+        corpo_fim = secao.end() + (fim.start() if fim else len(texto) - secao.end())
+        corpo = texto[secao.end() : corpo_fim]
+        if re.search(r"^placa\s*=", corpo, flags=re.MULTILINE):
+            corpo = re.sub(r'^placa\s*=\s*"[^"]*"', linha_nova, corpo, count=1, flags=re.MULTILINE)
+        else:
+            corpo = "\n" + linha_nova + corpo
+        texto = texto[: secao.end()] + corpo + texto[corpo_fim:]
+    fd, temporario = tempfile.mkstemp(prefix=".axil.", dir=arquivo.parent)
+    with open(fd, "w", encoding="utf-8") as saida:
+        saida.write(texto)
+    Path(temporario).replace(arquivo)

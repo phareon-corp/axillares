@@ -1,0 +1,6 @@
+titulo = "Semáforo em SystemVerilog"
+nivel = "intermediário"
+ordem = 5
+descricao = "O mesmo semáforo, escrito em SystemVerilog: estados com enum, logic no lugar de wire/reg, always_ff e always_comb separando memória de lógica."
+aprende = ["SystemVerilog", "typedef enum", "always_ff / always_comb", "unique case"]
+topo_fixo = "semaforo"

@@ -92,6 +92,35 @@ entra = "o layout roteado + o desenho das células da biblioteca"
 sai = "contador.gds e companhia, em saida/ da execução"
 observar = "É o que você vê na tela Layout."
 
+# --- FPGA ----------------------------------------------------------------------------------
+
+[[passo]]
+id = "fpga-sintese"
+titulo = "Síntese para FPGA"
+ferramenta = "Yosys"
+o_que = "Traduz o seu circuito nos blocos que a FPGA tem: LUTs (tabelas-verdade de 4 entradas que fazem qualquer porta lógica), flip-flops, memórias e multiplicadores. Numa FPGA não se fabricam portas: configuram-se as que já existem."
+entra = "rtl/*.v ou *.sv + a família da FPGA (iCE40, ECP5)"
+sai = "a netlist em blocos da FPGA (um .json)"
+observar = "Quantas LUTs e flip-flops: é o \"tamanho\" do seu circuito nesta FPGA."
+
+[[passo]]
+id = "fpga-pnr"
+titulo = "Posicionamento e roteamento"
+ferramenta = "nextpnr"
+o_que = "Escolhe qual LUT e qual flip-flop do chip faz cada pedaço do circuito e liga tudo pela malha de roteamento programável. Respeita os pinos que você mapeou para a placa e mede a frequência máxima."
+entra = "a netlist + o arquivo de pinos gerado para a placa (PCF ou LPF)"
+sai = "o circuito posicionado e roteado, e o relatório com Fmax e utilização"
+observar = "A Fmax precisa ser maior que o relógio da placa (12 MHz no iCEBreaker, 25 MHz na ULX3S)."
+
+[[passo]]
+id = "fpga-bitstream"
+titulo = "Bitstream"
+ferramenta = "icepack · ecppack"
+o_que = "Converte o resultado no bitstream: o arquivo de configuração que, gravado na FPGA, faz dela o seu circuito."
+entra = "o circuito roteado"
+sai = "o bitstream (.bin no iCE40, .bit no ECP5), em saida/ da execução"
+observar = "É o arquivo que se grava na placa."
+
 [etapas.sintese]
 titulo = "Síntese"
 resumo = "Do Verilog até a lista de portas lógicas, com uma estimativa de velocidade. Leva segundos e já diz se o circuito é o que você queria e se cabe no relógio."
@@ -101,3 +130,8 @@ passos = ["elaborate", "synthesis", "timing"]
 titulo = "Do RTL ao GDS"
 resumo = "O fluxo físico inteiro: depois da síntese, o circuito ganha forma — lugar para cada célula, relógio distribuído, fios desenhados — e vira o GDSII que uma fábrica produziria."
 passos = ["elaborate", "synthesis", "cleanup", "timing", "floorplan", "place", "cts", "route", "write"]
+
+[etapas.fpga]
+titulo = "FPGA"
+resumo = "O mesmo Verilog, agora numa FPGA: em segundos vira um bitstream que configura uma placa de verdade — iCEBreaker ou ULX3S — para ser o seu circuito."
+passos = ["fpga-sintese", "fpga-pnr", "fpga-bitstream"]

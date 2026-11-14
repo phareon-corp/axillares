@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from axillares.motor.base import Contexto, ErroMotor, Motor
 
-MOTORES = ("siliconcompiler",)
+MOTORES = ("siliconcompiler", "edalize")
 
 
 def obter_motor(nome: str) -> Motor:
@@ -15,6 +15,10 @@ def obter_motor(nome: str) -> Motor:
         from axillares.motor.silicon import MotorSiliconCompiler
 
         return MotorSiliconCompiler()
+    if nome == "edalize":
+        from axillares.motor.edalize_fpga import MotorEdalize
+
+        return MotorEdalize()
     disponiveis = ", ".join(MOTORES)
     raise ErroMotor(f"Motor “{nome}” desconhecido. Disponíveis: {disponiveis}.")
 

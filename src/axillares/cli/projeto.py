@@ -135,9 +135,14 @@ def executar(
     etapa: Etapa = typer.Argument(..., help="sintese ou gds"),
     pasta: Path | None = OpcaoProjeto,
     log: bool = typer.Option(False, "--log", help="Transmite o log completo do motor."),
+    placa: str | None = typer.Option(
+        None, "--placa", help="Só para a etapa fpga: usa esta placa nesta execução."
+    ),
 ) -> None:
-    """Executa uma etapa do fluxo e grava a execução no caderno (runs/)."""
+    """Executa uma etapa (sintese, gds ou fpga) e grava a execução no caderno (runs/)."""
     projeto = _projeto(pasta)
+    if placa is not None:
+        projeto.fpga.placa = placa
     nome_motor = projeto.motores.para(etapa)
     try:
         motor: Motor = fabrica_motor(nome_motor)
@@ -390,3 +395,21 @@ def layout(
         f"{fmt.numero(x2 - x1, 2)} × {fmt.numero(y2 - y1, 2)} µm · {len(info.camadas)} camadas · "
         f"PDK {pdk}[/]"
     )
+
+
+# --- placas -------------------------------------------------------------------------------
+
+
+def placas_cmd() -> None:
+    """Lista as placas FPGA conhecidas e os recursos (pinos) que cada uma oferece."""
+    from axillares.core import placas
+
+    for p in placas.listar():
+        console.print(
+            f"[bold]{p.id}[/]  {p.nome} [dim]· {p.fabricante} · {p.familia.upper()} "
+            f"{p.dispositivo} {p.pacote} · relógio {p.relogio_mhz:g} MHz[/]"
+        )
+        console.print(f"  [dim]{p.descricao}[/]")
+        recursos = ", ".join(p.recursos)
+        console.print(f"  [dim]recursos:[/] {recursos}")
+        console.print(f"  [dim]pinagem conferida em:[/] {p.fonte}\n")

@@ -16,6 +16,33 @@ pdk = "{{ pdk }}"          # skywater130 · gf180 · ihp130
 frequencia_mhz = {{ frequencia_mhz }}         # usada para gerar o SDC quando fontes.sdc não é informado
 relogio = "clk"
 
+[fpga]
+placa = "icebreaker"        # icebreaker · ulx3s  (veja: axil placas)
+
+[fpga.pinos.icebreaker]
+clk = "clk"
+rst_n = "btn0"
+en = "btn1"
+"q[0]" = "led0"
+"q[1]" = "led1"
+"q[2]" = "led2"
+"q[3]" = "led3"
+"q[4]" = "led4"
+
+[fpga.pinos.ulx3s]
+clk = "clk"
+rst_n = "btn0"
+en = "btn1"
+"q[0]" = "led0"
+"q[1]" = "led1"
+"q[2]" = "led2"
+"q[3]" = "led3"
+"q[4]" = "led4"
+"q[5]" = "led5"
+"q[6]" = "led6"
+"q[7]" = "led7"
+
 [motores]
 sintese = "siliconcompiler"
 gds = "siliconcompiler"
+fpga = "edalize"

@@ -9,6 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QFileDialog,
     QFrame,
@@ -21,9 +22,10 @@ from PySide6.QtWidgets import (
 
 from axillares.core import explicacoes as ex
 from axillares.core import formato as fmt
+from axillares.core import placas
 from axillares.core.caderno import RegistroExecucao
 from axillares.core.modelos import Etapa, Situacao, TipoArtefato
-from axillares.core.projeto import Projeto
+from axillares.core.projeto import Projeto, definir_placa
 from axillares.gui import tarefas
 from axillares.gui import tema as t
 from axillares.gui.componentes import (
@@ -42,10 +44,11 @@ from axillares.gui.componentes import (
 )
 from axillares.gui.dialogos import DialogoNovoProjeto
 from axillares.gui.sessao import Sessao
+from axillares.gui.telas.execucoes import _segmentos
 from axillares.gui.telas.fluxo import FluxoExplicado
 from axillares.gui.tema import Espaco, Papel
 
-TITULOS_ETAPA = {Etapa.SINTESE: "Síntese", Etapa.GDS: "Do RTL ao GDS"}
+TITULOS_ETAPA = {Etapa.SINTESE: "Síntese", Etapa.GDS: "Do RTL ao GDS", Etapa.FPGA: "FPGA"}
 LIMITE_LOG = 4000
 
 
@@ -243,6 +246,19 @@ class CartaoEtapa(QFrame):
         lay.addWidget(desc)
         n = len(resumo.passos)
         lay.addWidget(rotulo(f"{n} passos — veja abaixo como funciona cada um", Papel.ROTULO, "3"))
+        self.combo_placa = None
+        if etapa is Etapa.FPGA:
+            linha = QHBoxLayout()
+            linha.addWidget(rotulo("placa", Papel.ROTULO, "3"))
+            self.combo_placa = QComboBox()
+            self.combo_placa.setFont(t.fonte(Papel.PEQUENO))
+            for placa in placas.listar():
+                self.combo_placa.addItem(f"{placa.nome} · {placa.familia.upper()}", placa.id)
+            self.combo_placa.setToolTip("Troca a placa em [fpga] do axil.toml")
+            self.combo_placa.activated.connect(lambda _i: tela.trocar_placa(
+                self.combo_placa.currentData()))  # fmt: skip
+            linha.addWidget(self.combo_placa, 1)
+            lay.addLayout(linha)
         self.ultima = rotulo("Ainda não executada.", Papel.MONO, "3")
         self.ultima.setWordWrap(True)
         lay.addWidget(self.ultima)
@@ -333,10 +349,11 @@ class TelaProjeto(QWidget):
         lay.addWidget(grade)
 
         lay.addWidget(NumeroSecao("01", "Etapas", "UMA EXECUÇÃO POR CLIQUE · TUDO VAI PARA runs/"))
-        caixa = GradeResponsiva(min_coluna=340, max_colunas=2)
+        caixa = GradeResponsiva(min_coluna=300, max_colunas=3)
         self.cartoes = {
             Etapa.SINTESE: CartaoEtapa("01", Etapa.SINTESE, self),
             Etapa.GDS: CartaoEtapa("02", Etapa.GDS, self),
+            Etapa.FPGA: CartaoEtapa("03", Etapa.FPGA, self),
         }
         for c in self.cartoes.values():
             caixa.adicionar(c)
@@ -354,8 +371,16 @@ class TelaProjeto(QWidget):
         intro.setWordWrap(True)
         intro.setMaximumWidth(760)
         lay.addWidget(intro)
-        self.fluxo = FluxoExplicado()
-        lay.addWidget(self.fluxo)
+        alternar, self._grupo_fluxo = _segmentos(
+            [("Chip (ASIC)", "asic"), ("FPGA", "fpga")], self._mostrar_familia
+        )
+        alternar.addStretch(1)
+        lay.addLayout(alternar)
+        self.fluxos = {"asic": FluxoExplicado("asic"), "fpga": FluxoExplicado("fpga")}
+        for fluxo in self.fluxos.values():
+            lay.addWidget(fluxo)
+        self.fluxos["fpga"].hide()
+        self._familia = "asic"
 
         self.secao_execucao = NumeroSecao("03", "Execução")
         lay.addWidget(self.secao_execucao)
@@ -397,8 +422,30 @@ class TelaProjeto(QWidget):
         for c in self.cartoes.values():
             c.botao.setEnabled(False)
         self.secao_execucao.show()
+        self._mostrar_familia("fpga" if etapa is Etapa.FPGA else "asic")
         self.fluxo.comecar(etapa)
         self.painel.comecar(etapa, nome_motor)
+
+    @property
+    def fluxo(self) -> FluxoExplicado:
+        return self.fluxos[self._familia]
+
+    def _mostrar_familia(self, familia: str) -> None:
+        self._familia = familia
+        for nome, fluxo in self.fluxos.items():
+            fluxo.setVisible(nome == familia)
+        self._grupo_fluxo.button(0 if familia == "asic" else 1).setChecked(True)
+
+    def trocar_placa(self, placa: str) -> None:
+        projeto = self.sessao.projeto
+        if projeto is None or placa == projeto.fpga.placa:
+            return
+        raiz = projeto.raiz
+        tarefa = tarefas.em_segundo_plano(lambda: definir_placa(raiz, placa), self)
+        tarefa.concluido.connect(lambda _x: self.sessao.abrir(raiz))
+        tarefa.falhou.connect(self.sessao.erro)
+        tarefa.iniciar()
+        self._tarefa_placa = tarefa
 
     def _linha(self, linha: str, passo: str | None) -> None:
         self.painel.receber(linha, passo)
@@ -424,6 +471,8 @@ class TelaProjeto(QWidget):
                 "Pronto. Veja as métricas abaixo; em Execuções cada uma é explicada, e em Layout "
                 "você vê o chip desenhado."
                 if registro.etapa is Etapa.GDS
+                else "Pronto. O bitstream está em Execuções: é o arquivo que se grava na placa."
+                if registro.etapa is Etapa.FPGA
                 else "Pronto. A netlist está em Execuções; a etapa GDS continua daqui até o chip."
             )
         else:
@@ -446,6 +495,11 @@ class TelaProjeto(QWidget):
             return
         self.pilha.setCurrentIndex(1)
         p = projeto
+        combo = self.cartoes[Etapa.FPGA].combo_placa
+        if combo is not None:
+            combo.blockSignals(True)
+            combo.setCurrentIndex(max(0, combo.findData(p.fpga.placa)))
+            combo.blockSignals(False)
         self.eyebrow.texto.setText(
             f"PROJETO · {p.asic.pdk.value} · {p.asic.biblioteca_efetiva}".upper()
         )
