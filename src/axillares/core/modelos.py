@@ -17,6 +17,8 @@ class Etapa(StrEnum):
     SINTESE = "sintese"
     GDS = "gds"
     FPGA = "fpga"
+    SIMULACAO = "sim"
+    TESTE = "teste"
 
     @property
     def descricao(self) -> str:
@@ -24,7 +26,14 @@ class Etapa(StrEnum):
             Etapa.SINTESE: "síntese lógica e temporização estimada",
             Etapa.GDS: "fluxo físico completo, do RTL ao GDSII",
             Etapa.FPGA: "síntese, posicionamento e roteamento numa FPGA, até o bitstream",
+            Etapa.SIMULACAO: "simulação do testbench clássico, para olhar a onda",
+            Etapa.TESTE: "testes automáticos em cocotb, com asserções que passam ou falham",
         }[self]
+
+    @property
+    def verifica(self) -> bool:
+        """Simulação e teste conferem o comportamento; não produzem hardware."""
+        return self in (Etapa.SIMULACAO, Etapa.TESTE)
 
 
 class Situacao(StrEnum):
@@ -44,6 +53,7 @@ class TipoArtefato(StrEnum):
     MANIFESTO = "manifesto"
     BITSTREAM = "bitstream"
     RELATORIO = "relatorio"
+    ONDA = "onda"
     OUTRO = "outro"
 
 
@@ -75,6 +85,26 @@ class Local(_Modelo):
     mensagem: str
     gravidade: str = Field(default="erro", pattern="^(erro|aviso)$")
     origem: str = ""
+
+
+class SituacaoCaso(StrEnum):
+    PASSOU = "passou"
+    FALHOU = "falhou"
+    PULADO = "pulado"
+
+
+class CasoTeste(_Modelo):
+    """Um teste automático (cocotb): o nome, se passou, e por quê não, se falhou."""
+
+    nome: str
+    modulo: str = ""
+    situacao: SituacaoCaso
+    duracao_s: float = 0.0
+    tempo_simulado_ns: float | None = None
+    mensagem: str = Field(default="", description="Resumo da falha, uma linha.")
+    detalhe: str = Field(default="", description="Traceback ou saída completa da falha.")
+    arquivo: str = ""
+    linha: int | None = None
 
 
 class Falha(_Modelo):

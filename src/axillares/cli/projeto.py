@@ -132,17 +132,25 @@ def mostrar_desfecho(r: RegistroExecucao, raiz: Path) -> None:
 
 
 def executar(
-    etapa: Etapa = typer.Argument(..., help="sintese ou gds"),
+    etapa: Etapa = typer.Argument(..., help="sintese, gds, fpga, sim ou teste"),
     pasta: Path | None = OpcaoProjeto,
     log: bool = typer.Option(False, "--log", help="Transmite o log completo do motor."),
     placa: str | None = typer.Option(
         None, "--placa", help="Só para a etapa fpga: usa esta placa nesta execução."
     ),
 ) -> None:
-    """Executa uma etapa (sintese, gds ou fpga) e grava a execução no caderno (runs/)."""
+    """Executa uma etapa e grava a execução no caderno (runs/)."""
     projeto = _projeto(pasta)
     if placa is not None:
         projeto.fpga.placa = placa
+    registro = _executar(projeto, etapa, log)
+    if registro.situacao is not Situacao.SUCESSO:
+        raise typer.Exit(1)
+
+
+def _executar(
+    projeto: Projeto, etapa: Etapa, log: bool = False, opcoes: dict | None = None
+) -> RegistroExecucao:
     nome_motor = projeto.motores.para(etapa)
     try:
         motor: Motor = fabrica_motor(nome_motor)
@@ -169,7 +177,7 @@ def executar(
     def rodar() -> None:
         try:
             estado["resultado"] = executar_etapa(
-                projeto, etapa, motor, ao_receber=receber, cancelar=cancelar
+                projeto, etapa, motor, ao_receber=receber, cancelar=cancelar, opcoes=opcoes
             )
         except Exception as erro:  # pragma: no cover - executar_etapa já captura tudo
             estado["erro"] = erro
@@ -201,8 +209,134 @@ def executar(
         raise estado["erro"]
     registro: RegistroExecucao = estado["resultado"]
     mostrar_desfecho(registro, projeto.raiz)
+    return registro
+
+
+# --- simulação, testes e ondas ------------------------------------------------------------
+
+SIMBOLO_CASO = {"passou": "[green]✓[/]", "falhou": "[red]✕[/]", "pulado": "[dim]○[/]"}
+
+
+def sim(
+    pasta: Path | None = OpcaoProjeto,
+    verilator: bool = typer.Option(
+        False, "--verilator", help="Simula com o Verilator em vez do simulador do axil.toml."
+    ),
+    icarus: bool = typer.Option(False, "--icarus", help="Simula com o Icarus Verilog."),
+    log: bool = typer.Option(False, "--log", help="Transmite o log completo."),
+) -> None:
+    """Simula o testbench clássico e grava a onda — para OLHAR o circuito no tempo."""
+    from axillares.core.projeto import Simulador
+
+    projeto = _projeto(pasta)
+    if verilator:
+        projeto.simulacao.simulador = Simulador.VERILATOR
+    elif icarus:
+        projeto.simulacao.simulador = Simulador.ICARUS
+    registro = _executar(projeto, Etapa.SIMULACAO, log)
+    _mostrar_onda(registro, projeto.raiz)
     if registro.situacao is not Situacao.SUCESSO:
         raise typer.Exit(1)
+
+
+def teste(
+    pasta: Path | None = OpcaoProjeto,
+    filtro: str | None = typer.Option(
+        None, "-k", "--filtro", help="Só os testes cujo nome casa com esta expressão regular."
+    ),
+    log: bool = typer.Option(False, "--log", help="Transmite o log completo."),
+) -> None:
+    """Roda os testes automáticos (cocotb) — cada um passa ou falha por asserção."""
+    from axillares.core import verificacao
+
+    projeto = _projeto(pasta)
+    registro = _executar(projeto, Etapa.TESTE, log, {"filtro": filtro} if filtro else None)
+    lista = verificacao.casos(registro)
+    if lista:
+        tabela = Table(box=None, padding=(0, 2), show_header=True, header_style="dim")
+        tabela.add_column("")
+        tabela.add_column("teste")
+        tabela.add_column("tempo simulado", justify="right", style="dim")
+        tabela.add_column("mensagem", overflow="fold")
+        for c in lista:
+            simulado = (
+                f"{fmt.numero(c.tempo_simulado_ns, 0)} ns" if c.tempo_simulado_ns else "—"
+            )  # fmt: skip
+            tabela.add_row(SIMBOLO_CASO[c.situacao.value], c.nome, simulado, c.mensagem)
+        console.print(tabela)
+        n = verificacao.contagem(lista)
+        console.print(
+            f"  [green]{n['passou']} passaram[/] · [red]{n['falhou']} falharam[/] · "
+            f"[dim]{n['pulado']} pulados[/]"  # type: ignore[index]
+        )
+    _mostrar_onda(registro, projeto.raiz)
+    if registro.situacao is not Situacao.SUCESSO:
+        raise typer.Exit(1)
+
+
+def _mostrar_onda(registro: RegistroExecucao, raiz: Path) -> None:
+    from axillares.core import verificacao
+
+    caminho = verificacao.onda(registro)
+    if caminho is not None:
+        console.print(f"  [dim]ONDA[/]     {caminho.relative_to(raiz)}   "
+                      f"[dim]→ axil onda #{registro.numero}[/]")  # fmt: skip
+
+
+def onda(
+    referencia: str = typer.Argument("ultima", help="Execução: #n, id, ultima, penultima."),
+    pasta: Path | None = OpcaoProjeto,
+    com: str = typer.Option("surfer", "--com", help="Visualizador: surfer ou gtkwave."),
+    sinais: bool = typer.Option(
+        False, "--sinais", help="Lista os sinais e quantas vezes mudam, sem abrir nada."
+    ),
+) -> None:
+    """Abre a onda de uma simulação ou teste (Surfer; GTKWave com --com gtkwave)."""
+    from axillares.ambiente.abrir import abrir_onda
+    from axillares.core import verificacao
+
+    projeto = _projeto(pasta)
+    caderno = Caderno(projeto.dir_runs)
+    try:
+        if referencia == "ultima":
+            # o índice não guarda artefatos: carrega cada uma, da mais nova para a mais velha
+            registro = next(
+                (caderno.carregar(r.id) for r in caderno.listar()
+                 if r.etapa.verifica and verificacao.onda(caderno.carregar(r.id))),
+                None,
+            )  # fmt: skip
+            if registro is None:
+                raise ErroCaderno(
+                    "Nenhuma execução com onda ainda. Rode “axil sim” ou “axil teste”."
+                )
+        else:
+            registro = caderno.resolver(referencia)
+    except ErroCaderno as erro:
+        raise _erro(str(erro)) from erro
+    caminho = verificacao.onda(registro)
+    if caminho is None:
+        raise _erro(f"A execução #{registro.numero} ({registro.etapa.value}) não tem onda.")
+    if sinais:
+        from axillares.motor.ondas import ErroOnda, Onda
+
+        try:
+            o = Onda(caminho)
+        except ErroOnda as erro:
+            raise _erro(str(erro)) from erro
+        console.print(f"[bold]{caminho.name}[/] [dim]· {o.formato} · escala {o.fator} "
+                      f"{o.unidade} · até {o.fim} {o.unidade}[/]")  # fmt: skip
+        for s in o.sinais:
+            largura = f"[{s.largura - 1}:0]" if s.largura > 1 else ""
+            console.print(f"  {s.nome_completo}{largura}  [dim]{len(o.mudancas(s.nome_completo))} "
+                          "mudança(s)[/]")  # fmt: skip
+        return
+    diagnostico = abrir_onda(caminho, com)
+    if diagnostico is not None:
+        console.print(f"[bold red]✕[/] {diagnostico.o_que}")
+        console.print(f"  [dim]{diagnostico.por_que}[/]")
+        console.print(f"  → {diagnostico.proximo_passo}")
+        raise typer.Exit(1)
+    console.print(f"[green]✓[/] Abrindo {caminho.name} no {com.capitalize()}.")
 
 
 # --- runs ---------------------------------------------------------------------------------

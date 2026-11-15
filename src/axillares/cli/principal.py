@@ -29,6 +29,9 @@ app.command("layout")(projeto.layout)
 app.command("placas")(projeto.placas_cmd)
 app.command("lint")(projeto.lint)
 app.command("arquivo")(projeto.arquivo)
+app.command("sim")(projeto.sim)
+app.command("teste")(projeto.teste)
+app.command("onda")(projeto.onda)
 
 
 @app.callback()

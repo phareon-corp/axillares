@@ -87,6 +87,8 @@ class ItemArquivo(QWidget):
         sigla, papel = PAPEIS.get(grupo, ("•", ""))
         if sigla == "V" and nome.lower().endswith((".sv", ".svh")):
             sigla = "SV"
+        elif sigla == "TB" and nome.lower().endswith(".py"):
+            sigla, papel = "PY", "teste automático (cocotb)"
         lay = QHBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         self.setFixedHeight(46)

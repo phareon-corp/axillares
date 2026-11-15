@@ -1,6 +1,5 @@
 // Testbench clássico do contador: reset, contagem com en=1 e pausa com en=0.
-// Simulação e ondas chegam ao Axillares na fase F4 (axil sim); por ora, o arquivo já existe
-// para você rodar à mão: iverilog -o tb tb/tb_contador.v rtl/contador.v && vvp tb
+// Rode com “axil sim” e abra a onda: clk, rst_n, en e q mudando no tempo.
 `timescale 1ns/1ps
 module tb_contador;
     reg clk = 0, rst_n = 0, en = 0;
@@ -16,7 +15,7 @@ module tb_contador;
         #12 rst_n = 1;
         en = 1;
         repeat (10) @(posedge clk);
-        en = 0;
+        #1 en = 0;  // depois da borda: mudar junto com ela seria uma corrida
         repeat (3) @(posedge clk);
         #1;
         if (q !== 8'd10) begin

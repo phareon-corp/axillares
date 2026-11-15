@@ -93,10 +93,37 @@ class SecaoFpga(_Secao):
     )
 
 
+class Simulador(StrEnum):
+    ICARUS = "icarus"
+    VERILATOR = "verilator"
+
+
+class SecaoSimulacao(_Secao):
+    simulador: Simulador = Field(
+        default=Simulador.ICARUS,
+        description="Para o testbench clássico (axil sim). Os testes cocotb usam o Icarus.",
+    )
+    testbench: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z_][A-Za-z0-9_$]*$",
+        description="Módulo de topo do testbench clássico. Sem ele: tb_<topo>.",
+    )
+    testes: list[str] = Field(
+        default_factory=lambda: ["tb/test_*.py"],
+        description="Módulos Python com testes cocotb (padrões glob).",
+    )
+    timescale: str = Field(default="1ns/1ps", pattern=r"^\d+\s*[munpf]?s\s*/\s*\d+\s*[munpf]?s$")
+    limite_s: float = Field(
+        default=120.0, gt=0, le=3600, description="Tempo máximo; evita testbench sem $finish."
+    )
+
+
 class SecaoMotores(_Secao):
     sintese: str = "siliconcompiler"
     gds: str = "siliconcompiler"
     fpga: str = "edalize"
+    sim: str = "edalize"
+    teste: str = "edalize"
 
     def para(self, etapa: Etapa) -> str:
         return getattr(self, etapa.value)
@@ -107,6 +134,7 @@ class Projeto(_Secao):
     fontes: SecaoFontes
     asic: SecaoAsic = Field(default_factory=SecaoAsic)
     fpga: SecaoFpga = Field(default_factory=SecaoFpga)
+    simulacao: SecaoSimulacao = Field(default_factory=SecaoSimulacao)
     motores: SecaoMotores = Field(default_factory=SecaoMotores)
 
     raiz: Path = Field(default=Path("."), exclude=True)
@@ -139,6 +167,14 @@ class Projeto(_Secao):
 
     def arquivos_testbench(self) -> list[Path]:
         return self._expandir(self.fontes.testbenches)
+
+    def arquivos_teste(self) -> list[Path]:
+        """Módulos Python de teste (cocotb)."""
+        return [a for a in self._expandir(self.simulacao.testes) if a.suffix == ".py"]
+
+    def testbench_classico(self) -> str:
+        """O módulo de topo do testbench clássico: o declarado, ou tb_<topo>."""
+        return self.simulacao.testbench or f"tb_{self.projeto.topo}"
 
     def arquivo_sdc(self) -> Path | None:
         return (self.raiz / self.fontes.sdc).resolve() if self.fontes.sdc else None
@@ -180,6 +216,9 @@ _ROTULOS = {
     "asic.pdk": "o PDK",
     "asic.frequencia_mhz": "a frequência alvo",
     "asic.chip_um": "o tamanho do chip",
+    "simulacao.simulador": "o simulador",
+    "simulacao.testbench": "o módulo do testbench",
+    "simulacao.timescale": "a escala de tempo (ex.: 1ns/1ps)",
 }
 
 

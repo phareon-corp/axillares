@@ -42,7 +42,14 @@ en = "btn1"
 "q[6]" = "led6"
 "q[7]" = "led7"
 
+[simulacao]
+simulador = "icarus"        # icarus · verilator — para o testbench clássico (axil sim)
+testbench = "tb_contador"   # módulo de topo do testbench clássico
+testes = ["tb/test_*.py"]   # testes cocotb (axil teste)
+
 [motores]
 sintese = "siliconcompiler"
 gds = "siliconcompiler"
 fpga = "edalize"
+sim = "edalize"
+teste = "edalize"

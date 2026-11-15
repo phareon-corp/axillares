@@ -36,6 +36,7 @@ def agrupar(projeto: Projeto) -> list[Grupo]:
     """RTL, testbenches, restrições, projeto e outros — na ordem em que se trabalha."""
     rtl = projeto.arquivos_rtl()
     tbs = [a for a in projeto.arquivos_testbench() if a not in rtl]
+    tbs += [a for a in projeto.arquivos_teste() if a not in tbs]
     sdc = [projeto.arquivo_sdc()] if projeto.arquivo_sdc() else []
     vistos = set(rtl) | set(tbs) | set(sdc)
     projeto_ = [projeto.raiz / ARQUIVO]

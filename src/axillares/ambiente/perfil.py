@@ -34,6 +34,10 @@ class Imagem(_Modelo):
     camadas: int = Field(gt=0)
     tamanho_gb: float = Field(gt=0)
     caminhos: list[str] = Field(default_factory=list)
+    bibliotecas: list[str] = Field(
+        default_factory=list,
+        description="LD_LIBRARY_PATH dentro da imagem (ela só o monta no shell de login).",
+    )
 
     @field_validator("digest")
     @classmethod

@@ -25,6 +25,7 @@ def executar_etapa(
     ao_receber: Callable[[str], None] = lambda _linha: None,
     cancelar: threading.Event | None = None,
     ao_iniciar: Callable[[str], None] = lambda _id: None,
+    opcoes: dict | None = None,
 ) -> RegistroExecucao:
     caderno = caderno or Caderno(projeto.dir_runs)
     cancelar = cancelar or threading.Event()
@@ -46,6 +47,7 @@ def executar_etapa(
             dir_saida=andamento.dir_saida,
             ao_receber=receber,
             cancelar=cancelar,
+            opcoes=dict(opcoes or {}),
         )
         comando: list[str] = []
         metricas: list[Metrica] = []

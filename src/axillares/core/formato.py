@@ -21,6 +21,8 @@ METRICAS_PRINCIPAIS = {
     "celulas": ("células", 0),
     "folga_setup_ns": ("folga", 2),
     "violacoes_drc": ("DRC", 0),
+    "testes_passaram": ("passaram", 0),
+    "testes_falharam": ("falharam", 0),
 }
 
 

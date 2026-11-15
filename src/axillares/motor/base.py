@@ -30,6 +30,8 @@ class Contexto:
     """Onde os artefatos ficam guardados (dentro do diretório imutável da execução)."""
     ao_receber: Callable[[str], None] = lambda _linha: None
     cancelar: threading.Event = field(default_factory=threading.Event)
+    opcoes: dict = field(default_factory=dict)
+    """Pedidos desta execução que não moram no axil.toml (ex.: filtro de testes)."""
 
 
 class Motor(Protocol):

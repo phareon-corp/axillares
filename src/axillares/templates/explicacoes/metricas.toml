@@ -151,3 +151,23 @@ leitura = "Bate com as portas do módulo de topo."
 [pinos_fpga_pct]
 o_que = "Os pinos usados, em porcentagem dos disponíveis no encapsulamento."
 leitura = "Informativo."
+
+[testes_total]
+o_que = "Quantos testes automáticos rodaram."
+leitura = "Mais testes cobrem mais comportamentos do circuito."
+
+[testes_passaram]
+o_que = "Testes cujas asserções foram todas verdadeiras."
+leitura = "O ideal é ser igual ao total (menos os pulados)."
+
+[testes_falharam]
+o_que = "Testes com alguma asserção falsa — ou que quebraram antes de terminar."
+leitura = "Precisa ser 0. Abra o caso para ver o valor encontrado e o esperado."
+
+[testes_pulados]
+o_que = "Testes marcados para não rodar (skip)."
+leitura = "Não contam como falha, mas também não conferem nada."
+
+[tempo_simulado_ns]
+o_que = "Quanto tempo de circuito foi simulado (o relógio da simulação, não o do computador)."
+leitura = "Só informativo: diz até onde a onda vai."

@@ -1,4 +1,6 @@
-"""MotorEdalize (FPGA): Yosys → nextpnr → bitstream pelo Edalize, dentro da imagem fixada.
+"""MotorEdalize: FPGA (Yosys → nextpnr → bitstream), simulação e testes, pelo Edalize na imagem.
+
+Simulação e testes moram em edalize_sim.py; aqui o motor só despacha por etapa.
 
 Como no MotorSiliconCompiler, nada de Edalize é importado aqui: um pedido em JSON vai para o
 script que roda na imagem, e o relatório do nextpnr é traduzido em relatorio_nextpnr.py.
@@ -17,7 +19,7 @@ from axillares.ambiente.executor import Executor, ExecutorReal
 from axillares.ambiente.perfil import Perfil, carregar_perfil
 from axillares.core import placas
 from axillares.core.modelos import Artefato, Etapa, Falha, Metrica, Situacao, TipoArtefato
-from axillares.motor import relatorio_nextpnr
+from axillares.motor import edalize_sim, relatorio_nextpnr
 from axillares.motor.base import Contexto, ErroMotor
 
 SCRIPT = Path(__file__).parent / "conteiner" / "executar_edalize.py"
@@ -45,6 +47,7 @@ class MotorEdalize:
         self.perfil = perfil or carregar_perfil()
         self.executor = executor or ExecutorReal()
         self._programa = programa
+        self._linhas: list[str] = []
 
     def versao(self) -> str:
         versao = self.perfil.motores.get(self.nome)
@@ -55,7 +58,7 @@ class MotorEdalize:
         return versao
 
     def etapas(self) -> set[Etapa]:
-        return {Etapa.FPGA}
+        return {Etapa.FPGA, Etapa.SIMULACAO, Etapa.TESTE}
 
     def programa(self) -> ct.ProgramaConteiner:
         if self._programa is None:
@@ -80,6 +83,9 @@ class MotorEdalize:
     # --- preparar ---------------------------------------------------------------------------
 
     def preparar(self, ctx: Contexto) -> list[str]:
+        if ctx.etapa.verifica:
+            edalize_sim.preparar(ctx)
+            return self.comando(ctx)
         if ctx.etapa is not Etapa.FPGA:
             raise ErroMotor(
                 f"O Edalize (neste Axillares) executa só a etapa fpga, não “{ctx.etapa}”."
@@ -134,6 +140,8 @@ class MotorEdalize:
             else ["--user", f"{os.getuid()}:{os.getgid()}"]
         )  # fmt: skip
         caminhos = ":".join(self.perfil.imagem.caminhos)
+        bibliotecas = ":".join(self.perfil.imagem.bibliotecas)
+        script = edalize_sim.SCRIPT.name if ctx.etapa.verifica else SCRIPT.name
         return [
             prog.nome, "run", "--rm", "--init", "--network=none",
             "--name", f"axil-{ctx.id_execucao}", *usuario,
@@ -141,8 +149,9 @@ class MotorEdalize:
             "-v", f"{ctx.dir_trabalho}:{NO_CONTEINER_TRABALHO}:z",
             "-e", "HOME=/tmp", "-w", NO_CONTEINER_TRABALHO,
             "--entrypoint", "sh", self.perfil.imagem.referencia,
-            "-c", f'export PATH="{caminhos}:$PATH"; exec python3 -u '
-                  f"{NO_CONTEINER_TRABALHO}/{SCRIPT.name} {NO_CONTEINER_TRABALHO}/pedido.json",
+            "-c", f'export PATH="{caminhos}:$PATH" LD_LIBRARY_PATH="{bibliotecas}"; '
+                  f"exec python3 -u {NO_CONTEINER_TRABALHO}/{script} "
+                  f"{NO_CONTEINER_TRABALHO}/pedido.json",
         ]  # fmt: skip
 
     # --- executar e coletar -----------------------------------------------------------------
@@ -157,18 +166,32 @@ class MotorEdalize:
         return json.loads(arquivo.read_text(encoding="utf-8"))
 
     def executar(self, ctx: Contexto) -> Situacao:
-        resultado = self.executor.transmitir(self.comando(ctx), ctx.ao_receber, ctx.cancelar)
+        self._linhas = []
+
+        def receber(linha: str) -> None:
+            self._linhas.append(linha)
+            del self._linhas[:-400]  # as últimas bastam para explicar uma falha
+            ctx.ao_receber(linha)
+
+        resultado = self.executor.transmitir(self.comando(ctx), receber, ctx.cancelar)
         if ctx.cancelar.is_set():
             self.executor.executar(
                 [self.programa().nome, "rm", "-f", f"axil-{ctx.id_execucao}"], tempo_limite=30
             )
             return Situacao.INTERROMPIDA
+        if ctx.etapa.verifica:
+            return edalize_sim.situacao(ctx, resultado.ok)
         return Situacao.SUCESSO if resultado.ok else Situacao.FALHA
 
     def descrever_progresso(self, linha: str) -> str | None:
+        passo = edalize_sim.descrever_progresso(linha)
+        if passo:
+            return passo
         return next((rotulo for prefixo, rotulo in _PASSOS if linha.startswith(prefixo)), None)
 
     def coletar_artefatos(self, ctx: Contexto) -> list[Artefato]:
+        if ctx.etapa.verifica:
+            return edalize_sim.coletar_artefatos(ctx)
         build = self._build(ctx)
         ctx.dir_saida.mkdir(parents=True, exist_ok=True)
         artefatos = []
@@ -199,10 +222,14 @@ class MotorEdalize:
         return artefatos
 
     def coletar_metricas(self, ctx: Contexto) -> list[Metrica]:
+        if ctx.etapa.verifica:
+            return edalize_sim.coletar_metricas(ctx)
         relatorio = self._relatorio(ctx)
         return relatorio_nextpnr.metricas(relatorio) if relatorio else []
 
     def explicar_falha(self, ctx: Contexto) -> Falha | None:
+        if ctx.etapa.verifica:
+            return edalize_sim.explicar_falha(ctx, self._linhas)
         relatorio = self._relatorio(ctx)
         if relatorio:
             falha = relatorio_nextpnr.falha_de_temporizacao(relatorio)
