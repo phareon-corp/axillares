@@ -41,12 +41,13 @@ from axillares.gui.telas.comparar import TelaComparar
 from axillares.gui.telas.editor import TelaEditor
 from axillares.gui.telas.execucoes import TelaExecucoes
 from axillares.gui.telas.layout import TelaLayout
+from axillares.gui.telas.ondas import TelaOndas
 from axillares.gui.telas.projeto import TelaProjeto
 from axillares.gui.tema import Espaco, Papel
 from axillares.motor import Motor
 
 # índices das telas (01 Abertura é global e fica fora da área)
-ABERTURA, PROJETO, EDITOR, EXECUCOES, LAYOUT, COMPARAR = range(6)
+ABERTURA, PROJETO, EDITOR, EXECUCOES, LAYOUT, COMPARAR, ONDAS = range(7)
 
 FontesDeExecucoes = Callable[[], list[tuple[str, Caderno]]]
 
@@ -75,7 +76,10 @@ class AreaProjeto(QWidget):
         self.execucoes = TelaExecucoes(self.sessao)
         self.layout_ = TelaLayout(self.sessao, fontes)
         self.comparar = TelaComparar(self.sessao)
-        for tela in (self.projeto, self.editor, self.execucoes, self.layout_, self.comparar):
+        self.ondas = TelaOndas(self.sessao)
+        self.ondas.pedir_execucao.connect(self.sessao.executar)
+        telas = (self.projeto, self.editor, self.execucoes, self.layout_, self.comparar, self.ondas)
+        for tela in telas:
             self.pilha.addWidget(tela)
         self.indice = PROJETO
         self.sessao.execucao_iniciada.connect(lambda *_: self.estado_mudou.emit())
@@ -96,6 +100,8 @@ class AreaProjeto(QWidget):
         self.pilha.setCurrentIndex(indice - PROJETO)
         if indice == LAYOUT:
             self.layout_.ao_mostrar()
+        elif indice == ONDAS:
+            self.ondas.ao_mostrar()
 
     @property
     def executando(self) -> bool:
@@ -282,6 +288,7 @@ __all__ = [
     "EDITOR",
     "EXECUCOES",
     "LAYOUT",
+    "ONDAS",
     "PROJETO",
     "AreaProjeto",
     "BarraProjetos",

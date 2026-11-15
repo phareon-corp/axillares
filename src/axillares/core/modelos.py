@@ -101,6 +101,8 @@ class CasoTeste(_Modelo):
     situacao: SituacaoCaso
     duracao_s: float = 0.0
     tempo_simulado_ns: float | None = None
+    inicio_ns: float | None = Field(default=None, description="Quando começou, na simulação.")
+    fim_ns: float | None = None
     mensagem: str = Field(default="", description="Resumo da falha, uma linha.")
     detalhe: str = Field(default="", description="Traceback ou saída completa da falha.")
     arquivo: str = ""

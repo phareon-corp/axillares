@@ -327,6 +327,8 @@ new QWebChannel(qt.webChannelTransport, canal => {
                              () => estado.ponte.acao("gds"));
     estado.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.Enter,
                              () => estado.ponte.acao("fpga"));
+    estado.editor.addCommand(monaco.KeyCode.F5, () => estado.ponte.acao("sim"));
+    estado.editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.F5, () => estado.ponte.acao("teste"));
     estado.editor.onDidChangeCursorPosition(avisarCursor);
     registrarDidatica();
     registrarLinguagem();

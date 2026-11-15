@@ -5,7 +5,7 @@ from __future__ import annotations
 import html
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtCore import QSettings, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -19,9 +19,11 @@ from PySide6.QtWidgets import (
 )
 
 from axillares.ambiente.abrir import abrir as abrir_visualizador
+from axillares.ambiente.abrir import abrir_onda
 from axillares.core import formato as fmt
+from axillares.core import verificacao
 from axillares.core.caderno import RegistroExecucao
-from axillares.core.modelos import Etapa, Situacao, TipoArtefato
+from axillares.core.modelos import Etapa, Situacao, SituacaoCaso, TipoArtefato
 from axillares.gui import tarefas
 from axillares.gui import tema as t
 from axillares.gui.componentes import (
@@ -40,6 +42,7 @@ from axillares.gui.componentes import (
 )
 from axillares.gui.sessao import Sessao
 from axillares.gui.telas.abertura import CartaoDiagnostico
+from axillares.gui.telas.ondas import CHAVE_VISUALIZADOR
 from axillares.gui.tema import Espaco, Papel
 
 
@@ -71,6 +74,14 @@ DESTAQUES_ASIC = (
     ("celulas", "Células"),
     ("folga_setup_ns", "Folga de setup"),
 )
+DESTAQUES_TESTE = (
+    ("testes_total", "Testes"),
+    ("testes_passaram", "Passaram"),
+    ("testes_falharam", "Falharam"),
+    ("tempo_simulado_ns", "Tempo simulado"),
+)
+FILTROS_CASOS = (("Todos", None), ("Passaram", "passou"), ("Falharam", "falhou"),
+                 ("Pulados", "pulado"))  # fmt: skip
 DESTAQUES_FPGA = (
     ("fmax_mhz", "Frequência máxima"),
     ("celulas_logicas", "Células lógicas"),
@@ -231,9 +242,18 @@ class DetalheExecucao(QWidget):
         self.botao_klayout.clicked.connect(self._abrir_gds)
         self.botao_pasta = botao("Mostrar na pasta", "fantasma")
         self.botao_pasta.clicked.connect(self._abrir_pasta)
+        self.botao_onda = botao("Ver onda  →", "primario")
+        self.botao_onda.setToolTip("A onda desta execução, dentro do app (tela Ondas)")
+        self.botao_onda.clicked.connect(
+            lambda: self.registro and self.sessao.pedir_tela.emit("onda", self.registro.id)
+        )
+        self.botao_onda_fora = botao("Abrir fora", "fantasma")
+        self.botao_onda_fora.clicked.connect(self._abrir_onda_fora)
         acoes.addWidget(self.botao_pasta)
         acoes.addWidget(self.botao_klayout)
+        acoes.addWidget(self.botao_onda_fora)
         acoes.addWidget(self.botao_gds)
+        acoes.addWidget(self.botao_onda)
         lado.addLayout(acoes)
         topo.addLayout(lado)
         self.lay.addWidget(linha_topo)
@@ -253,27 +273,75 @@ class DetalheExecucao(QWidget):
         self.grade = grade
         self.lay.addWidget(grade)
 
-        self.lay.addWidget(NumeroSecao("01", "Métricas", "TRADUZIDAS DO MANIFESTO DO MOTOR"))
+        # casos de teste (só nas execuções de teste)
+        self.secao_casos = QWidget()
+        sc = QVBoxLayout(self.secao_casos)
+        sc.setContentsMargins(0, 0, 0, 0)
+        sc.setSpacing(Espaco.M)
+        self.titulo_casos = NumeroSecao(
+            "01", "Casos de teste", "CADA UM PASSA OU FALHA POR ASSERÇÃO"
+        )
+        sc.addWidget(self.titulo_casos)
+        filtros, self._grupo_filtro = _segmentos(
+            [(nome, valor) for nome, valor in FILTROS_CASOS], self._filtrar_casos
+        )
+        filtros.addStretch(1)
+        sc.addLayout(filtros)
+        self.tabela_casos = Tabela(
+            [("", 1, "e"), ("teste", 6, "e"), ("tempo simulado", 3, "d"), ("mensagem", 10, "e")],
+            [Papel.CORPO_FORTE, Papel.MONO, Papel.MONO, Papel.PEQUENO],
+        )
+        sc.addWidget(self.tabela_casos)
+        self.caixa_caso = QWidget()
+        cc = QVBoxLayout(self.caixa_caso)
+        cc.setContentsMargins(0, 0, 0, 0)
+        cc.setSpacing(6)
+        linha_caso = QHBoxLayout()
+        self.titulo_caso = rotulo("", Papel.CORPO_FORTE)
+        linha_caso.addWidget(self.titulo_caso, 1)
+        self.botao_caso_editor = botao("Abrir no editor  →", "link")
+        self.botao_caso_editor.setFont(t.fonte(Papel.ETIQUETA))
+        linha_caso.addWidget(self.botao_caso_editor)
+        cc.addLayout(linha_caso)
+        self.detalhe_caso = QPlainTextEdit()
+        self.detalhe_caso.setProperty("tipo", "log")
+        self.detalhe_caso.setReadOnly(True)
+        self.detalhe_caso.setFont(t.fonte(Papel.MONO))
+        self.detalhe_caso.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.detalhe_caso.setFixedHeight(170)
+        cc.addWidget(self.detalhe_caso)
+        self.caixa_caso.hide()
+        sc.addWidget(self.caixa_caso)
+        self.lay.addWidget(self.secao_casos)
+        self._casos: list = []
+        self._caso_aberto = None
+        self.botao_caso_editor.clicked.connect(self._caso_no_editor)
+
+        self.titulo_metricas = NumeroSecao("01", "Métricas", "TRADUZIDAS DO MANIFESTO DO MOTOR")
+        self.lay.addWidget(self.titulo_metricas)
         self.metricas = Tabela(
             [("métrica", 5, "e"), ("valor", 3, "d"), ("unidade", 2, "e"), ("origem", 4, "e")],
             [Papel.CORPO, Papel.MONO, Papel.MONO, Papel.MONO],
         )
         self.lay.addWidget(self.metricas)
 
-        self.lay.addWidget(NumeroSecao("02", "Artefatos", "EM saida/"))
+        self.titulo_artefatos = NumeroSecao("02", "Artefatos", "EM saida/")
+        self.lay.addWidget(self.titulo_artefatos)
         self.artefatos = Tabela(
             [("arquivo", 5, "e"), ("tipo", 2, "e"), ("tamanho", 2, "d"), ("", 3, "d")],
             [Papel.MONO, Papel.ETIQUETA, Papel.MONO, Papel.CORPO],
         )
         self.lay.addWidget(self.artefatos)
 
-        self.lay.addWidget(NumeroSecao("03", "Registro", "meta.json"))
+        self.titulo_registro = NumeroSecao("03", "Registro", "meta.json")
+        self.lay.addWidget(self.titulo_registro)
         self.meta = rotulo("", Papel.MONO, "2", rico=True)
         self.meta.setWordWrap(True)
         self.meta.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.lay.addWidget(self.meta)
 
-        self.lay.addWidget(NumeroSecao("04", "Log", "log.txt — COMPLETO"))
+        self.titulo_log = NumeroSecao("04", "Log", "log.txt — COMPLETO")
+        self.lay.addWidget(self.titulo_log)
         self.log = QPlainTextEdit()
         self.log.setProperty("tipo", "log")
         self.log.setReadOnly(True)
@@ -311,6 +379,12 @@ class DetalheExecucao(QWidget):
         self.pilula.definir(texto, token)
         self.botao_gds.setVisible(self._gds() is not None)
         self.botao_klayout.setVisible(self._gds() is not None)
+        tem_onda = verificacao.onda(r) is not None
+        self.botao_onda.setVisible(tem_onda)
+        self.botao_onda_fora.setVisible(tem_onda)
+        preferido = QSettings("Axillares", "axillares").value(CHAVE_VISUALIZADOR, "surfer")
+        self.botao_onda_fora.setText("Abrir no GTKWave" if preferido == "gtkwave"
+                                     else "Abrir no Surfer")  # fmt: skip
 
         while self.aviso.count():
             item = self.aviso.takeAt(0)
@@ -334,8 +408,12 @@ class DetalheExecucao(QWidget):
                 )
             )
 
-        # o destaque muda com a etapa: num FPGA não há área de silício nem folga em ns
-        destaques = DESTAQUES_FPGA if r.etapa is Etapa.FPGA else DESTAQUES_ASIC
+        # o destaque muda com a etapa: num FPGA não há área de silício nem folga em ns; numa
+        # simulação clássica não há número algum — o resultado é a onda
+        self.grade.setVisible(r.etapa is not Etapa.SIMULACAO)
+        destaques = {Etapa.FPGA: DESTAQUES_FPGA, Etapa.TESTE: DESTAQUES_TESTE}.get(
+            r.etapa, DESTAQUES_ASIC
+        )
         for (chave, titulo), celula in zip(destaques, self.celulas.values(), strict=True):
             celula._rotulo.setText(titulo)
             m = r.metrica(chave)
@@ -344,6 +422,22 @@ class DetalheExecucao(QWidget):
                                f"medida em {m.origem}" if m.origem else "")  # fmt: skip
             else:
                 celula.definir("—", "", "não produzida nesta etapa")
+
+        self._casos = verificacao.casos(r)
+        self.secao_casos.setVisible(r.etapa is Etapa.TESTE)
+        secoes = [self.titulo_metricas, self.titulo_artefatos, self.titulo_registro,
+                  self.titulo_log]  # fmt: skip
+        if r.etapa is Etapa.TESTE:
+            secoes.insert(0, self.titulo_casos)
+            contagem = verificacao.contagem(self._casos)
+            for i, (nome, valor) in enumerate(FILTROS_CASOS):
+                n = len(self._casos) if valor is None else contagem[SituacaoCaso(valor)]
+                self._grupo_filtro.button(i).setText(f"{nome}  {n}")
+            falhou = contagem[SituacaoCaso.FALHOU]
+            self._grupo_filtro.button(2 if falhou else 0).setChecked(True)
+            self._filtrar_casos("falhou" if falhou else None)
+        for i, secao in enumerate(secoes):
+            secao.definir_numero(f"{i + 1:02d}")
 
         self.metricas.limpar()
         if not r.metricas:
@@ -385,6 +479,54 @@ class DetalheExecucao(QWidget):
             )
         )
         self.log.setPlainText(log)
+
+    def _filtrar_casos(self, situacao: object) -> None:
+        self.tabela_casos.limpar()
+        self.caixa_caso.hide()
+        marcas = {"passou": ("✓", "ok"), "falhou": ("✕", "falha"), "pulado": ("○", "3")}
+        escolhidos = [c for c in self._casos if situacao is None or c.situacao.value == situacao]
+        if not escolhidos:
+            self.tabela_casos.mostrar_vazio("Nenhum caso nesta situação.")
+        for c in escolhidos:
+            simbolo, tom = marcas[c.situacao.value]
+            simulado = f"{fmt.numero(c.tempo_simulado_ns, 0)} ns" if c.tempo_simulado_ns else "—"
+            self.tabela_casos.adicionar(
+                [rotulo(simbolo, Papel.CORPO_FORTE, tom), c.nome, simulado, c.mensagem or "—"],
+                ao_clicar=lambda x=c: self._abrir_caso(x),
+                tons=[None, None, "2", "2" if c.situacao.value != "falhou" else None],
+            )
+        falhos = [c for c in escolhidos if c.situacao is SituacaoCaso.FALHOU]
+        if falhos:
+            self._abrir_caso(falhos[0])
+
+    def _abrir_caso(self, caso) -> None:
+        self._caso_aberto = caso
+        local = f" · {caso.arquivo}:{caso.linha}" if caso.arquivo and caso.linha else ""
+        self.titulo_caso.setText(f"{caso.nome}{local}")
+        texto = caso.detalhe or caso.mensagem or "Passou: todas as asserções foram verdadeiras."
+        self.detalhe_caso.setPlainText(texto)
+        self.botao_caso_editor.setVisible(bool(caso.arquivo and caso.linha))
+        self.caixa_caso.show()
+
+    def _caso_no_editor(self) -> None:
+        caso, projeto = self._caso_aberto, self.sessao.projeto
+        if caso is None or projeto is None or not caso.arquivo:
+            return
+        self.sessao.pedir_tela.emit("editar", (projeto.raiz / caso.arquivo, caso.linha or 1))
+
+    def _abrir_onda_fora(self) -> None:
+        r = self.registro
+        caminho = verificacao.onda(r) if r else None
+        if caminho is None:
+            return
+        preferido = QSettings("Axillares", "axillares").value(CHAVE_VISUALIZADOR, "surfer")
+        diag = abrir_onda(caminho, str(preferido))
+        if diag is not None:
+            while self.aviso.count():
+                item = self.aviso.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            self.aviso.addWidget(CartaoDiagnostico(diag))
 
     def _gds(self) -> Path | None:
         r = self.registro

@@ -59,7 +59,13 @@ class MotorFalso:
         artefatos = []
         for nome, conteudo in self._atual.artefatos.items():
             (ctx.dir_saida / nome).write_bytes(conteudo)
-            tipo = TipoArtefato.GDS if ".gds" in nome else TipoArtefato.OUTRO
+            sufixo = Path(nome).suffix
+            tipo = (
+                TipoArtefato.GDS if ".gds" in nome
+                else TipoArtefato.ONDA if sufixo in {".vcd", ".fst"}
+                else TipoArtefato.RELATORIO if sufixo in {".json", ".xml"}
+                else TipoArtefato.OUTRO
+            )  # fmt: skip
             artefatos.append(
                 Artefato(nome=nome, tipo=tipo, caminho=Path("saida") / nome, bytes=len(conteudo))
             )

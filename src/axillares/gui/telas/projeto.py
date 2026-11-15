@@ -22,10 +22,10 @@ from PySide6.QtWidgets import (
 
 from axillares.core import explicacoes as ex
 from axillares.core import formato as fmt
-from axillares.core import placas
+from axillares.core import placas, verificacao
 from axillares.core.caderno import RegistroExecucao
 from axillares.core.modelos import Etapa, Situacao, TipoArtefato
-from axillares.core.projeto import Projeto, definir_placa
+from axillares.core.projeto import Projeto, definir_placa, definir_simulador
 from axillares.gui import tarefas
 from axillares.gui import tema as t
 from axillares.gui.componentes import (
@@ -48,7 +48,16 @@ from axillares.gui.telas.execucoes import _segmentos
 from axillares.gui.telas.fluxo import FluxoExplicado
 from axillares.gui.tema import Espaco, Papel
 
-TITULOS_ETAPA = {Etapa.SINTESE: "Síntese", Etapa.GDS: "Do RTL ao GDS", Etapa.FPGA: "FPGA"}
+TITULOS_ETAPA = {
+    Etapa.SIMULACAO: "Simulação",
+    Etapa.TESTE: "Testes",
+    Etapa.SINTESE: "Síntese",
+    Etapa.GDS: "Do RTL ao GDS",
+    Etapa.FPGA: "FPGA",
+}
+# segmento do "Como funciona" que mostra os passos de cada etapa
+FAMILIA_DA_ETAPA = {Etapa.FPGA: "fpga", Etapa.SIMULACAO: "verificacao", Etapa.TESTE: "verificacao"}
+FAMILIAS = (("Simulação e testes", "verificacao"), ("Chip (ASIC)", "asic"), ("FPGA", "fpga"))
 LIMITE_LOG = 4000
 
 
@@ -107,9 +116,12 @@ class PainelExecucao(QFrame):
         acoes = QHBoxLayout()
         acoes.setSpacing(Espaco.S + 2)
         self.ver_detalhe = botao("Ver detalhe  →", "primario")
+        self.ver_onda = botao("Ver onda  →", "fantasma")
+        self.ver_onda.hide()
         self.alternar_log = botao("Mostrar log", "link")
         self.alternar_log.setFont(t.fonte(Papel.ETIQUETA))
         acoes.addWidget(self.ver_detalhe)
+        acoes.addWidget(self.ver_onda)
         acoes.addWidget(self.alternar_log)
         acoes.addStretch(1)
         self.ver_detalhe.hide()
@@ -147,6 +159,7 @@ class PainelExecucao(QFrame):
         self.trilha.setText("")
         self.resumo.hide()
         self.ver_detalhe.hide()
+        self.ver_onda.hide()
         self.pilula.hide()
         self.cancelar.show()
         self.cancelar.setEnabled(True)
@@ -218,6 +231,7 @@ class PainelExecucao(QFrame):
             self.resumo.setText("<br><br>".join(linhas))
         self.resumo.show()
         self.ver_detalhe.show()
+        self.ver_onda.setVisible(verificacao.onda(r) is not None)
 
 
 def _escapar(texto: str) -> str:
@@ -247,6 +261,25 @@ class CartaoEtapa(QFrame):
         n = len(resumo.passos)
         lay.addWidget(rotulo(f"{n} passos — veja abaixo como funciona cada um", Papel.ROTULO, "3"))
         self.combo_placa = None
+        self.combo_simulador = None
+        if etapa is Etapa.SIMULACAO:
+            linha = QHBoxLayout()
+            linha.addWidget(rotulo("simulador", Papel.ROTULO, "3"))
+            self.combo_simulador = QComboBox()
+            self.combo_simulador.setFont(t.fonte(Papel.PEQUENO))
+            self.combo_simulador.addItem("Icarus Verilog", "icarus")
+            self.combo_simulador.addItem("Verilator", "verilator")
+            self.combo_simulador.setItemData(
+                0, "Compila em instantes; ótimo para começar.", Qt.ItemDataRole.ToolTipRole
+            )
+            self.combo_simulador.setItemData(1, "Gera C++ e compila (alguns segundos); "
+                                             "simula muito mais rápido circuitos grandes.",
+                                             Qt.ItemDataRole.ToolTipRole)  # fmt: skip
+            self.combo_simulador.setToolTip("Troca o simulador em [simulacao] do axil.toml")
+            self.combo_simulador.activated.connect(lambda _i: tela.trocar_simulador(
+                self.combo_simulador.currentData()))  # fmt: skip
+            linha.addWidget(self.combo_simulador, 1)
+            lay.addLayout(linha)
         if etapa is Etapa.FPGA:
             linha = QHBoxLayout()
             linha.addWidget(rotulo("placa", Papel.ROTULO, "3"))
@@ -350,20 +383,18 @@ class TelaProjeto(QWidget):
 
         lay.addWidget(NumeroSecao("01", "Etapas", "UMA EXECUÇÃO POR CLIQUE · TUDO VAI PARA runs/"))
         caixa = GradeResponsiva(min_coluna=300, max_colunas=3)
-        self.cartoes = {
-            Etapa.SINTESE: CartaoEtapa("01", Etapa.SINTESE, self),
-            Etapa.GDS: CartaoEtapa("02", Etapa.GDS, self),
-            Etapa.FPGA: CartaoEtapa("03", Etapa.FPGA, self),
-        }
+        # na ordem do dia a dia: conferir o comportamento antes de virar hardware
+        ordem = (Etapa.SIMULACAO, Etapa.TESTE, Etapa.SINTESE, Etapa.GDS, Etapa.FPGA)
+        self.cartoes = {e: CartaoEtapa(f"{i + 1:02d}", e, self) for i, e in enumerate(ordem)}
         for c in self.cartoes.values():
             caixa.adicionar(c)
         lay.addWidget(caixa)
 
         lay.addWidget(NumeroSecao("02", "Como funciona", "CLIQUE NUM PASSO PARA DETALHES"))
         intro = rotulo(
-            "Um chip sai do seu Verilog em passos. Cada passo é uma ferramenta aberta, chamada "
-            "pelo "
-            "SiliconCompiler dentro da imagem de ferramentas. Durante uma execução, o passo atual "
+            "Do seu Verilog até o chip (ou a FPGA) são passos, e antes deles vem a verificação: "
+            "simular e testar. Cada passo é uma ferramenta aberta, chamada pelo SiliconCompiler "
+            "ou pelo Edalize dentro da imagem de ferramentas. Durante uma execução, o passo atual "
             "acende aqui.",
             Papel.CORPO,
             "2",
@@ -371,16 +402,14 @@ class TelaProjeto(QWidget):
         intro.setWordWrap(True)
         intro.setMaximumWidth(760)
         lay.addWidget(intro)
-        alternar, self._grupo_fluxo = _segmentos(
-            [("Chip (ASIC)", "asic"), ("FPGA", "fpga")], self._mostrar_familia
-        )
+        alternar, self._grupo_fluxo = _segmentos(list(FAMILIAS), self._mostrar_familia)
         alternar.addStretch(1)
         lay.addLayout(alternar)
-        self.fluxos = {"asic": FluxoExplicado("asic"), "fpga": FluxoExplicado("fpga")}
+        self.fluxos = {f: FluxoExplicado(f) for _, f in FAMILIAS}
         for fluxo in self.fluxos.values():
             lay.addWidget(fluxo)
-        self.fluxos["fpga"].hide()
         self._familia = "asic"
+        self._mostrar_familia("asic")
 
         self.secao_execucao = NumeroSecao("03", "Execução")
         lay.addWidget(self.secao_execucao)
@@ -388,6 +417,9 @@ class TelaProjeto(QWidget):
         self.painel.cancelar.clicked.connect(self.cancelar)
         self.painel.ver_detalhe.clicked.connect(
             lambda: self._ultimo and self.sessao.pedir_tela.emit("execucao", self._ultimo.id)
+        )
+        self.painel.ver_onda.clicked.connect(
+            lambda: self._ultimo and self.sessao.pedir_tela.emit("onda", self._ultimo.id)
         )
         lay.addWidget(self.painel)
         self.secao_execucao.hide()
@@ -422,7 +454,7 @@ class TelaProjeto(QWidget):
         for c in self.cartoes.values():
             c.botao.setEnabled(False)
         self.secao_execucao.show()
-        self._mostrar_familia("fpga" if etapa is Etapa.FPGA else "asic")
+        self._mostrar_familia(FAMILIA_DA_ETAPA.get(etapa, "asic"))
         self.fluxo.comecar(etapa)
         self.painel.comecar(etapa, nome_motor)
 
@@ -434,7 +466,19 @@ class TelaProjeto(QWidget):
         self._familia = familia
         for nome, fluxo in self.fluxos.items():
             fluxo.setVisible(nome == familia)
-        self._grupo_fluxo.button(0 if familia == "asic" else 1).setChecked(True)
+        indice = [f for _, f in FAMILIAS].index(familia)
+        self._grupo_fluxo.button(indice).setChecked(True)
+
+    def trocar_simulador(self, simulador: str) -> None:
+        projeto = self.sessao.projeto
+        if projeto is None or simulador == projeto.simulacao.simulador.value:
+            return
+        raiz = projeto.raiz
+        tarefa = tarefas.em_segundo_plano(lambda: definir_simulador(raiz, simulador), self)
+        tarefa.concluido.connect(lambda _x: self.sessao.abrir(raiz))
+        tarefa.falhou.connect(self.sessao.erro)
+        tarefa.iniciar()
+        self._tarefa_simulador = tarefa
 
     def trocar_placa(self, placa: str) -> None:
         projeto = self.sessao.projeto
@@ -467,14 +511,18 @@ class TelaProjeto(QWidget):
         self.painel.terminar(registro)
         self.fluxo.terminar(registro.situacao is Situacao.SUCESSO)
         if registro.situacao is Situacao.SUCESSO:
-            self.painel.explicacao.setText(
-                "Pronto. Veja as métricas abaixo; em Execuções cada uma é explicada, e em Layout "
-                "você vê o chip desenhado."
-                if registro.etapa is Etapa.GDS
-                else "Pronto. O bitstream está em Execuções: é o arquivo que se grava na placa."
-                if registro.etapa is Etapa.FPGA
-                else "Pronto. A netlist está em Execuções; a etapa GDS continua daqui até o chip."
-            )
+            mensagens = {
+                Etapa.GDS: "Pronto. Veja as métricas abaixo; em Execuções cada uma é explicada, e "
+                "em Layout você vê o chip desenhado.",
+                Etapa.FPGA: "Pronto. O bitstream está em Execuções: é o arquivo que se grava na "
+                "placa.",
+                Etapa.SIMULACAO: "Pronto. O testbench terminou sem $fatal. Abra a onda e confira, "
+                "sinal a sinal, se o circuito fez o que você esperava.",
+                Etapa.TESTE: "Pronto. Todos os testes passaram. A onda fica guardada para quando "
+                "algum falhar.",
+            }
+            padrao = "Pronto. A netlist está em Execuções; a etapa GDS continua daqui até o chip."
+            self.painel.explicacao.setText(mensagens.get(registro.etapa, padrao))
         else:
             self.painel.explicacao.hide()
 
@@ -500,6 +548,11 @@ class TelaProjeto(QWidget):
             combo.blockSignals(True)
             combo.setCurrentIndex(max(0, combo.findData(p.fpga.placa)))
             combo.blockSignals(False)
+        combo_sim = self.cartoes[Etapa.SIMULACAO].combo_simulador
+        if combo_sim is not None:
+            combo_sim.blockSignals(True)
+            combo_sim.setCurrentIndex(max(0, combo_sim.findData(p.simulacao.simulador.value)))
+            combo_sim.blockSignals(False)
         self.eyebrow.texto.setText(
             f"PROJETO · {p.asic.pdk.value} · {p.asic.biblioteca_efetiva}".upper()
         )
@@ -540,6 +593,9 @@ class TelaProjeto(QWidget):
             m = r.metrica("fmax_mhz")
             if m and r.situacao is Situacao.SUCESSO:
                 extra = f" · Fmax {fmt.numero(m.valor, 1)} MHz"
+            passaram, total = r.metrica("testes_passaram"), r.metrica("testes_total")
+            if passaram and total:
+                extra = f" · {fmt.numero(passaram.valor, 0)}/{fmt.numero(total.valor, 0)} testes"
             cartao.ultima.setText(f"ÚLTIMA #{r.numero}: {texto} · {fmt.momento(r.inicio)}{extra}")
 
 

@@ -37,6 +37,7 @@ from axillares.gui.espaco import (
     EDITOR,
     EXECUCOES,
     LAYOUT,
+    ONDAS,
     PROJETO,
     AbaProjeto,
     AreaProjeto,
@@ -57,6 +58,7 @@ SECOES = (
     ("04", "Execuções", True),
     ("05", "Layout", True),
     ("06", "Comparar", True),
+    ("07", "Ondas", True),
 )
 
 
@@ -107,7 +109,7 @@ class Trilho(QFrame):
         self.projeto.setContentsMargins(Espaco.M + 2, 0, Espaco.M, 0)
         self.projeto.setWordWrap(True)
         lay.addWidget(self.projeto)
-        breve = rotulo("07   Trilha · em breve", Papel.ROTULO, "3")
+        breve = rotulo("08   Trilha · em breve", Papel.ROTULO, "3")
         self._expandidos += [self.projeto, breve]
         breve.setContentsMargins(Espaco.M + 2, Espaco.M, Espaco.M, 0)
         lay.addWidget(breve)
@@ -456,7 +458,7 @@ class JanelaPrincipal(QMainWindow):
 
     def _ajustar_trilho(self) -> None:
         # Editor e Layout precisam de largura; em janelas estreitas, todas as telas também
-        self.trilho.compactar(self.indice in (EDITOR, LAYOUT) or self.width() < 1180)
+        self.trilho.compactar(self.indice in (EDITOR, LAYOUT, ONDAS) or self.width() < 1180)
 
     def resizeEvent(self, evento) -> None:
         super().resizeEvent(evento)
@@ -490,6 +492,13 @@ class JanelaPrincipal(QMainWindow):
         elif nome == "layout":
             area.layout_.mostrar_execucao(str(argumento))
             self.ir_para(LAYOUT)
+        elif nome == "editar":
+            caminho, linha = argumento
+            self.ir_para(EDITOR)
+            area.editor.abrir(Path(caminho).resolve(), int(linha))
+        elif nome == "onda":
+            area.ondas.mostrar_execucao(str(argumento))
+            self.ir_para(ONDAS)
 
     def closeEvent(self, evento: QCloseEvent) -> None:
         if not self._pode_fechar:

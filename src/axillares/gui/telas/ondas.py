@@ -1,0 +1,450 @@
+"""Tela 7 — Ondas: a simulação vista no tempo, dentro do app.
+
+À esquerda, os sinais da onda (por escopo, com busca); no centro, o VisorOndas. A onda vem de uma
+execução de simulação ou de teste do projeto. Para quem prefere, "Abrir fora" leva a mesma onda
+ao Surfer ou ao GTKWave instalados na máquina.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtCore import QSettings, Qt, Signal
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLineEdit,
+    QSplitter,
+    QStackedWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QTreeWidgetItemIterator,
+    QVBoxLayout,
+    QWidget,
+)
+
+from axillares.core import formato as fmt
+from axillares.core import verificacao
+from axillares.core.caderno import RegistroExecucao
+from axillares.core.modelos import Etapa, SituacaoCaso
+from axillares.gui import tarefas
+from axillares.gui import tema as t
+from axillares.gui.componentes import (
+    botao,
+    cabecalho_tela,
+    layout_de_tela,
+    rotulo,
+    tom_da_situacao,
+)
+from axillares.gui.sessao import Sessao
+from axillares.gui.telas.abertura import CartaoDiagnostico
+from axillares.gui.tema import Espaco, Papel
+from axillares.gui.visor_ondas import Faixa, VisorOndas, texto_tempo
+from axillares.motor.ondas import FATORES_PS, ErroOnda, Onda
+
+PAPEL_SINAL = Qt.ItemDataRole.UserRole
+CHAVE_VISUALIZADOR = "ondas/visualizador_externo"
+COMO_LER = (
+    "Cada linha é um fio do circuito, e o tempo corre para a direita. Um sinal de 1 bit sobe e "
+    "desce entre 0 e 1; um barramento mostra o número que carrega (em hexadecimal, decimal ou "
+    "binário). Clique para pôr o cursor: os valores ao lado dos nomes passam a ser os daquele "
+    "instante. Vermelho é X (valor desconhecido — um registrador sem reset, por exemplo); "
+    "amarelo é Z (fio solto)."
+)
+
+
+def _rotulo_execucao(r: RegistroExecucao) -> str:
+    texto, _ = tom_da_situacao(r.situacao)
+    extra = ""
+    passaram, total = r.metrica("testes_passaram"), r.metrica("testes_total")
+    if passaram and total:
+        extra = f" · {fmt.numero(passaram.valor, 0)}/{fmt.numero(total.valor, 0)} testes"
+    return f"#{r.numero} · {r.etapa.value} · {texto}{extra} · {fmt.momento(r.inicio)}"
+
+
+class TelaOndas(QWidget):
+    pedir_execucao = Signal(object)
+    """Etapa a executar (sim ou teste), pedida pelo estado vazio."""
+
+    def __init__(self, sessao: Sessao) -> None:
+        super().__init__()
+        self.sessao = sessao
+        self._registros: list[RegistroExecucao] = []
+        self._pedido: str | None = None
+        self.onda: Onda | None = None
+        self._config = QSettings("Axillares", "axillares")
+        self._tarefas: list[tarefas.Tarefa] = []
+
+        raiz = QVBoxLayout(self)
+        raiz.setContentsMargins(0, 0, 0, 0)
+        raiz.setSpacing(0)
+        self.pilha = QStackedWidget()
+        raiz.addWidget(self.pilha)
+        self.pilha.addWidget(self._montar_vazio())
+        self.pilha.addWidget(self._montar_visor())
+        sessao.projeto_mudou.connect(lambda _p: self.recarregar())
+        sessao.execucoes_mudaram.connect(self._execucoes_mudaram)
+        sessao.execucao_concluida.connect(self._concluida)
+
+    # --- montagem -----------------------------------------------------------------------------
+
+    def _montar_vazio(self) -> QWidget:
+        w = QWidget()
+        lay = layout_de_tela(w)
+        cab, _ = cabecalho_tela(
+            "Ondas",
+            f"O circuito visto no {t.serifa('tempo', tamanho_px=54)}.",
+            "Uma simulação grava como cada sinal muda a cada instante. Rode o testbench "
+            "(Simular) para olhar o comportamento, ou os testes automáticos (Testar), que também "
+            "deixam a onda para você investigar uma falha.",
+        )
+        lay.addLayout(cab)
+        acoes = QHBoxLayout()
+        acoes.setSpacing(Espaco.S + 2)
+        simular = botao("Simular  ▸", "primario")
+        simular.clicked.connect(lambda: self.pedir_execucao.emit(Etapa.SIMULACAO))
+        testar = botao("Testar  ▸", "fantasma")
+        testar.clicked.connect(lambda: self.pedir_execucao.emit(Etapa.TESTE))
+        acoes.addWidget(simular)
+        acoes.addWidget(testar)
+        acoes.addStretch(1)
+        lay.addLayout(acoes)
+        self.aviso_vazio = QVBoxLayout()
+        lay.addLayout(self.aviso_vazio)
+        lay.addStretch(1)
+        return w
+
+    def _montar_visor(self) -> QWidget:
+        w = QWidget()
+        col = QVBoxLayout(w)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(0)
+
+        barra = QFrame()
+        barra.setProperty("tipo", "barra-abas")
+        b = QHBoxLayout(barra)
+        b.setContentsMargins(Espaco.M + 2, 6, Espaco.M, 6)
+        b.setSpacing(Espaco.S)
+        b.addWidget(rotulo("Ondas", Papel.ROTULO, "3"))
+        self.combo = QComboBox()
+        self.combo.setFont(t.fonte(Papel.MONO))
+        self.combo.setMinimumWidth(240)
+        self.combo.currentIndexChanged.connect(self._escolheu)
+        b.addWidget(self.combo, 1)
+        b.addSpacing(Espaco.S)
+        self.bases = {}
+        for base, texto in (("hex", "HEX"), ("dec", "DEC"), ("bin", "BIN")):
+            botao_base = botao(texto, "compacto")
+            botao_base.setCheckable(True)
+            botao_base.setToolTip("Como os barramentos mostram o número")
+            botao_base.clicked.connect(lambda _c=False, x=base: self._base(x))
+            self.bases[base] = botao_base
+            b.addWidget(botao_base)
+        self.bases["hex"].setChecked(True)
+        b.addSpacing(Espaco.S)
+        for texto, dica, acao in (
+            ("−", "Afastar (−)", lambda: self.visor.zoom(1 / 1.5)),
+            ("+", "Aproximar (+ ou Ctrl+roda)", lambda: self.visor.zoom(1.5)),
+            ("Ajustar", "Toda a simulação na tela (F)", lambda: self.visor.ajustar()),
+        ):
+            z = botao(texto, "compacto")
+            z.setToolTip(dica)
+            z.clicked.connect(acao)
+            b.addWidget(z)
+        b.addSpacing(Espaco.S)
+        self.combo_fora = QComboBox()
+        self.combo_fora.setFont(t.fonte(Papel.PEQUENO))
+        self.combo_fora.addItem("Surfer", "surfer")
+        self.combo_fora.addItem("GTKWave", "gtkwave")
+        preferido = self._config.value(CHAVE_VISUALIZADOR, "surfer")
+        self.combo_fora.setCurrentIndex(max(0, self.combo_fora.findData(preferido)))
+        self.combo_fora.activated.connect(
+            lambda _i: self._config.setValue(CHAVE_VISUALIZADOR, self.combo_fora.currentData())
+        )
+        self.combo_fora.setToolTip("Visualizador instalado na máquina, para abrir fora do app")
+        fora = botao("Abrir fora ↗", "compacto")
+        fora.clicked.connect(self.abrir_fora)
+        b.addWidget(self.combo_fora)
+        b.addWidget(fora)
+        col.addWidget(barra)
+
+        self.avisos = QVBoxLayout()
+        self.avisos.setContentsMargins(Espaco.M, 0, Espaco.M, 0)
+        col.addLayout(self.avisos)
+
+        divisor = QSplitter(Qt.Orientation.Horizontal)
+        divisor.setHandleWidth(1)
+        divisor.setChildrenCollapsible(False)
+        lateral = QFrame()
+        lateral.setProperty("tipo", "lateral-editor")
+        lat = QVBoxLayout(lateral)
+        lat.setContentsMargins(Espaco.M, Espaco.M, Espaco.M, Espaco.M)
+        lat.setSpacing(Espaco.S)
+        lat.addWidget(rotulo("Sinais", Papel.ROTULO, "3"))
+        self.busca = QLineEdit()
+        self.busca.setPlaceholderText("procurar sinal…")
+        self.busca.setFont(t.fonte(Papel.MONO))
+        self.busca.textChanged.connect(self._filtrar)
+        lat.addWidget(self.busca)
+        self.arvore = QTreeWidget()
+        self.arvore.setHeaderHidden(True)
+        self.arvore.setIndentation(Espaco.M)
+        self.arvore.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.arvore.itemChanged.connect(self._marcou)
+        lat.addWidget(self.arvore, 1)
+        self.como_ler = rotulo(COMO_LER, Papel.PEQUENO, "3")
+        self.como_ler.setWordWrap(True)
+        lat.addWidget(self.como_ler)
+        lateral.setMinimumWidth(230)
+        divisor.addWidget(lateral)
+
+        miolo = QWidget()
+        m = QVBoxLayout(miolo)
+        m.setContentsMargins(0, 0, 0, 0)
+        m.setSpacing(0)
+        self.visor = VisorOndas()
+        self.visor.cursor_mudou.connect(self._cursor_mudou)
+        m.addWidget(self.visor, 1)
+        estado = QFrame()
+        estado.setProperty("tipo", "barra-estado")
+        e = QHBoxLayout(estado)
+        e.setContentsMargins(Espaco.M + 2, 0, Espaco.M, 0)
+        self.info = rotulo("", Papel.ETIQUETA, "2")
+        e.addWidget(self.info)
+        e.addStretch(1)
+        e.addWidget(rotulo("CLIQUE: CURSOR · ARRASTE: MOVER · CTRL+RODA: ZOOM · ← →: PRÓXIMA "
+                           "MUDANÇA · F: AJUSTAR", Papel.ETIQUETA, "3"))  # fmt: skip
+        estado.setFixedHeight(30)
+        m.addWidget(estado)
+        divisor.addWidget(miolo)
+        divisor.setStretchFactor(1, 1)
+        divisor.setSizes([270, 1000])
+        col.addWidget(divisor, 1)
+        return w
+
+    # --- execuções -----------------------------------------------------------------------------
+
+    def recarregar(self) -> None:
+        caderno = self.sessao.caderno
+        if caderno is None:
+            self._registros = []
+            self.pilha.setCurrentIndex(0)
+            return
+
+        def ler() -> list[RegistroExecucao]:
+            saida = []
+            for r in caderno.listar():
+                if r.etapa.verifica:
+                    completo = caderno.carregar(r.id)
+                    if verificacao.onda(completo) is not None:
+                        saida.append(completo)
+            return saida
+
+        self._rodar(ler, self._mostrar_lista)
+
+    def _rodar(self, funcao, ao_concluir) -> None:
+        tarefa = tarefas.em_segundo_plano(funcao, self)
+        tarefa.concluido.connect(ao_concluir)
+        tarefa.falhou.connect(self.sessao.erro)
+        self._tarefas = [x for x in self._tarefas if x.rodando] + [tarefa]
+        tarefa.iniciar()
+
+    def _execucoes_mudaram(self) -> None:
+        if self.isVisible():
+            self.recarregar()
+
+    def _concluida(self, registro: RegistroExecucao) -> None:
+        if registro.etapa.verifica:
+            self._pedido = registro.id
+            self.recarregar()
+
+    def _mostrar_lista(self, registros: list[RegistroExecucao]) -> None:
+        self._registros = registros
+        if not registros:
+            self.pilha.setCurrentIndex(0)
+            self.onda = None
+            return
+        self.pilha.setCurrentIndex(1)
+        atual = self.combo.currentData()
+        alvo = self._pedido or atual or registros[0].id
+        self._pedido = None
+        self.combo.blockSignals(True)
+        self.combo.clear()
+        for r in registros:
+            self.combo.addItem(_rotulo_execucao(r), r.id)
+        indice = max(0, self.combo.findData(alvo))
+        self.combo.setCurrentIndex(indice)
+        self.combo.blockSignals(False)
+        if self.onda is None or alvo != atual:
+            self._escolheu(indice)
+
+    def mostrar_execucao(self, ident: str) -> None:
+        """Pedido de outra tela ("Ver onda" no detalhe da execução)."""
+        indice = self.combo.findData(ident)
+        if indice >= 0:
+            self.combo.setCurrentIndex(indice)
+        else:
+            self._pedido = ident
+            self.recarregar()
+
+    def ao_mostrar(self) -> None:
+        if not self._registros:
+            self.recarregar()
+
+    @property
+    def registro(self) -> RegistroExecucao | None:
+        ident = self.combo.currentData()
+        return next((r for r in self._registros if r.id == ident), None)
+
+    def _escolheu(self, _indice: int) -> None:
+        r = self.registro
+        if r is None:
+            return
+        caminho = verificacao.onda(r)
+        if caminho is None:
+            return
+
+        def ler() -> tuple[Onda, list[Faixa]]:
+            onda = Onda(caminho)
+            return onda, self._faixas(r, onda)
+
+        tarefa = tarefas.em_segundo_plano(ler, self)
+        tarefa.concluido.connect(lambda par: self._carregada(*par))
+        tarefa.falhou.connect(self._falhou)
+        self._tarefas = [x for x in self._tarefas if x.rodando] + [tarefa]
+        tarefa.iniciar()
+
+    @staticmethod
+    def _faixas(r: RegistroExecucao, onda: Onda) -> list[Faixa]:
+        if r.etapa is not Etapa.TESTE:
+            return []
+        por_unidade = onda.fator * FATORES_PS.get(onda.unidade, 1.0)
+        faixas = []
+        for c in verificacao.casos(r):
+            if c.inicio_ns is None or c.fim_ns is None or c.situacao is SituacaoCaso.PULADO:
+                continue
+            faixas.append(Faixa(c.inicio_ns * 1000 / por_unidade, c.fim_ns * 1000 / por_unidade,
+                                c.nome, c.situacao is SituacaoCaso.PASSOU))  # fmt: skip
+        return faixas
+
+    def _falhou(self, mensagem: str) -> None:
+        self._limpar_avisos()
+        from axillares.ambiente.diagnostico import Diagnostico
+
+        diagnostico = Diagnostico(
+            codigo="onda",
+            o_que=mensagem,
+            por_que="",
+            proximo_passo="Rode a simulação de novo; se persistir, abra a onda fora do app.",
+        )
+        self.avisos.addWidget(CartaoDiagnostico(diagnostico))
+
+    def _limpar_avisos(self) -> None:
+        while self.avisos.count():
+            item = self.avisos.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+    def _carregada(self, onda: Onda, faixas: list[Faixa]) -> None:
+        self._limpar_avisos()
+        self.onda = onda
+        iniciais = onda.sinais_iniciais()
+        self._preencher_arvore(onda, set(iniciais))
+        self.visor.definir(onda, iniciais, faixas)
+        self._cursor_mudou(None)
+
+    # --- sinais --------------------------------------------------------------------------------
+
+    def _preencher_arvore(self, onda: Onda, marcados: set[str]) -> None:
+        self.arvore.blockSignals(True)
+        self.arvore.clear()
+        escopos: dict[str, QTreeWidgetItem] = {}
+        for escopo in onda.escopos():
+            item = QTreeWidgetItem([escopo.rpartition(".")[2] or escopo])
+            item.setFont(0, t.fonte(Papel.ROTULO))
+            item.setForeground(0, t.paleta().qcolor("tinta_3"))
+            item.setToolTip(0, escopo)
+            pai = escopos.get(escopo.rpartition(".")[0])
+            (pai.addChild(item) if pai else self.arvore.addTopLevelItem(item))
+            escopos[escopo] = item
+        for s in onda.sinais:
+            largura = f" [{s.largura - 1}:0]" if s.largura > 1 else ""
+            item = QTreeWidgetItem([s.nome + largura])
+            item.setFont(0, t.fonte(Papel.MONO))
+            item.setData(0, PAPEL_SINAL, s.nome_completo)
+            item.setToolTip(0, f"{s.nome_completo} · {s.tipo.lower()}")
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(0, Qt.CheckState.Checked if s.nome_completo in marcados
+                               else Qt.CheckState.Unchecked)  # fmt: skip
+            escopos[s.escopo].addChild(item)
+        self.arvore.expandAll()
+        self.arvore.blockSignals(False)
+
+    def _marcou(self, item: QTreeWidgetItem, _coluna: int) -> None:
+        nome = item.data(0, PAPEL_SINAL)
+        if not nome:
+            return
+        linhas = list(self.visor.linhas)
+        if item.checkState(0) == Qt.CheckState.Checked and nome not in linhas:
+            linhas.append(nome)
+        elif item.checkState(0) == Qt.CheckState.Unchecked and nome in linhas:
+            linhas.remove(nome)
+        self.visor.definir_linhas(linhas)
+
+    def mostrar_sinais(self, nomes: list[str]) -> None:
+        """Marca exatamente estes sinais (na ordem dada)."""
+        iterador = QTreeWidgetItemIterator(self.arvore)
+        self.arvore.blockSignals(True)
+        while iterador.value():
+            item = iterador.value()
+            nome = item.data(0, PAPEL_SINAL)
+            if nome:
+                item.setCheckState(0, Qt.CheckState.Checked if nome in nomes
+                                   else Qt.CheckState.Unchecked)  # fmt: skip
+            iterador += 1
+        self.arvore.blockSignals(False)
+        self.visor.definir_linhas(nomes)
+
+    def _filtrar(self, texto: str) -> None:
+        procura = texto.strip().lower()
+        iterador = QTreeWidgetItemIterator(self.arvore)
+        while iterador.value():
+            item = iterador.value()
+            nome = item.data(0, PAPEL_SINAL)
+            if nome:
+                item.setHidden(bool(procura) and procura not in nome.lower())
+            iterador += 1
+
+    def _base(self, base: str) -> None:
+        for chave, b in self.bases.items():
+            b.setChecked(chave == base)
+        self.visor.definir_base(base)
+
+    def _cursor_mudou(self, tempo: object) -> None:
+        onda = self.onda
+        if onda is None:
+            self.info.setText("")
+            return
+        total = texto_tempo(onda.em_ps(onda.fim))
+        partes = [f"{onda.formato}", f"{len(onda.sinais)} sinais", f"até {total}"]
+        if tempo is not None:
+            partes.insert(0, f"cursor em {texto_tempo(onda.em_ps(int(tempo)))}")
+        self.info.setText("  ·  ".join(partes).upper())
+
+    def abrir_fora(self) -> None:
+        r = self.registro
+        caminho: Path | None = verificacao.onda(r) if r else None
+        if caminho is None:
+            return
+        from axillares.ambiente.abrir import abrir_onda
+
+        visualizador = self.combo_fora.currentData()
+        self._config.setValue(CHAVE_VISUALIZADOR, visualizador)
+        diag = abrir_onda(caminho, visualizador)
+        self._limpar_avisos()
+        if diag is not None:
+            self.avisos.addWidget(CartaoDiagnostico(diag))
+
+
+__all__ = ["ErroOnda", "TelaOndas"]

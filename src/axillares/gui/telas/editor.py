@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from axillares.core import fontes
+from axillares.core import fontes, verificacao
 from axillares.core import formato as fmt
 from axillares.core.caderno import RegistroExecucao
 from axillares.core.modelos import Etapa, Local, Situacao
@@ -275,6 +275,12 @@ class TelaEditor(QWidget):
             lambda: self.editor and self.editor.acao("editor.action.formatDocument")
         )
         self.botao_formatar.setEnabled(False)
+        self.botao_simular = botao("Simular  ▸", "compacto")
+        self.botao_simular.setToolTip("F5 — salva tudo, roda o testbench e grava a onda")
+        self.botao_simular.clicked.connect(lambda: self.sessao.executar(Etapa.SIMULACAO))
+        self.botao_testar = botao("Testar  ▸", "compacto")
+        self.botao_testar.setToolTip("Shift+F5 — salva tudo e roda os testes cocotb")
+        self.botao_testar.clicked.connect(lambda: self.sessao.executar(Etapa.TESTE))
         self.botao_sintese = botao("Síntese  ▸", "compacto")
         self.botao_sintese.setMinimumWidth(96)
         self.botao_sintese.setToolTip("Ctrl+Enter — salva tudo e executa a síntese")
@@ -283,7 +289,8 @@ class TelaEditor(QWidget):
         self.botao_gds.setMinimumWidth(80)
         self.botao_gds.setToolTip("Ctrl+Shift+Enter — salva tudo e executa o fluxo até o GDS")
         self.botao_gds.clicked.connect(lambda: self.sessao.executar(Etapa.GDS))
-        for w in (self.botao_formatar, self.botao_salvar, self.botao_sintese, self.botao_gds):
+        for w in (self.botao_formatar, self.botao_salvar, self.botao_simular, self.botao_testar,
+                  self.botao_sintese, self.botao_gds):  # fmt: skip
             b.addSpacing(6)
             b.addWidget(w)
         col.addWidget(barra)
@@ -352,6 +359,10 @@ class TelaEditor(QWidget):
         self.ver_execucao.setFont(t.fonte(Papel.ETIQUETA))
         self.ver_execucao.hide()
         e.addWidget(self.ver_execucao)
+        self.ver_onda = botao("Ver onda →", "link")
+        self.ver_onda.setFont(t.fonte(Papel.ETIQUETA))
+        self.ver_onda.hide()
+        e.addWidget(self.ver_onda)
         e.addStretch(1)
         self.botao_problemas = botao("", "link")
         self.botao_problemas.setFont(t.fonte(Papel.ETIQUETA))
@@ -384,6 +395,9 @@ class TelaEditor(QWidget):
         self._relogio.timeout.connect(self._tique)
         self.ver_execucao.clicked.connect(
             lambda: self._ultimo and self.sessao.pedir_tela.emit("execucao", self._ultimo.id)
+        )
+        self.ver_onda.clicked.connect(
+            lambda: self._ultimo and self.sessao.pedir_tela.emit("onda", self._ultimo.id)
         )
 
         sessao.projeto_mudou.connect(self._projeto_mudou)
@@ -743,8 +757,9 @@ class TelaEditor(QWidget):
         self.ponto_execucao.definir_token("acento")
         self.pilula.hide()
         self.ver_execucao.hide()
-        self.botao_sintese.setEnabled(False)
-        self.botao_gds.setEnabled(False)
+        self.ver_onda.hide()
+        for b in (self.botao_simular, self.botao_testar, self.botao_sintese, self.botao_gds):
+            b.setEnabled(False)
         self._relogio.start()
         self._tique()
 
@@ -759,8 +774,9 @@ class TelaEditor(QWidget):
     def _execucao_concluida(self, r: RegistroExecucao) -> None:
         self._relogio.stop()
         self._ultimo = r
-        self.botao_sintese.setEnabled(True)
-        self.botao_gds.setEnabled(True)
+        for b in (self.botao_simular, self.botao_testar, self.botao_sintese, self.botao_gds):
+            b.setEnabled(True)
+        self.ver_onda.setVisible(verificacao.onda(r) is not None)
         texto, token = tom_da_situacao(r.situacao)
         self.ponto_execucao.definir_token(token)
         self.pilula.definir(texto, token)
@@ -770,6 +786,9 @@ class TelaEditor(QWidget):
         m = r.metrica("fmax_mhz")
         if m and r.situacao is Situacao.SUCESSO:
             resumo += f" · Fmax {fmt.numero(m.valor, 1)} MHz"
+        passaram, total = r.metrica("testes_passaram"), r.metrica("testes_total")
+        if passaram and total:
+            resumo += f" · {fmt.numero(passaram.valor, 0)}/{fmt.numero(total.valor, 0)} testes"
         self.estado_execucao.setText(resumo)
         locais = r.falha.locais if r.falha else []
         self.mostrar_problemas(locais)

@@ -273,27 +273,43 @@ def _traduzir(e: dict) -> str:
 
 def definir_placa(raiz: Path, placa: str) -> None:
     """Troca a placa em [fpga] do axil.toml, preservando o resto do arquivo (e os comentários)."""
-    import re
-    import tempfile
-
     from axillares.core.placas import ErroPlaca, carregar
 
     try:
         carregar(placa)
     except ErroPlaca as erro:
         raise ErroProjeto(str(erro)) from erro
+    _definir_valor(raiz, "fpga", "placa", placa)
+
+
+def definir_simulador(raiz: Path, simulador: str) -> None:
+    """Troca o simulador do testbench clássico em [simulacao] do axil.toml."""
+    try:
+        Simulador(simulador)
+    except ValueError as erro:
+        opcoes = ", ".join(s.value for s in Simulador)
+        raise ErroProjeto(f"Simulador “{simulador}” desconhecido. Use: {opcoes}.") from erro
+    _definir_valor(raiz, "simulacao", "simulador", simulador)
+
+
+def _definir_valor(raiz: Path, secao_nome: str, chave: str, valor: str) -> None:
+    """Escreve `chave = "valor"` em [secao], preservando comentários; grava de forma atômica."""
+    import re
+    import tempfile
+
     arquivo = Path(raiz) / ARQUIVO
     texto = arquivo.read_text(encoding="utf-8")
-    secao = re.search(r"^\[fpga\]\s*$", texto, flags=re.MULTILINE)
-    linha_nova = f'placa = "{placa}"'
+    secao = re.search(rf"^\[{re.escape(secao_nome)}\]\s*$", texto, flags=re.MULTILINE)
+    linha_nova = f'{chave} = "{valor}"'
     if secao is None:
-        texto = texto.rstrip("\n") + f"\n\n[fpga]\n{linha_nova}\n"
+        texto = texto.rstrip("\n") + f"\n\n[{secao_nome}]\n{linha_nova}\n"
     else:
         fim = re.search(r"^\[", texto[secao.end() :], flags=re.MULTILINE)
         corpo_fim = secao.end() + (fim.start() if fim else len(texto) - secao.end())
         corpo = texto[secao.end() : corpo_fim]
-        if re.search(r"^placa\s*=", corpo, flags=re.MULTILINE):
-            corpo = re.sub(r'^placa\s*=\s*"[^"]*"', linha_nova, corpo, count=1, flags=re.MULTILINE)
+        padrao = rf'^{re.escape(chave)}\s*=\s*"[^"]*"'
+        if re.search(padrao, corpo, flags=re.MULTILINE):
+            corpo = re.sub(padrao, linha_nova, corpo, count=1, flags=re.MULTILINE)
         else:
             corpo = "\n" + linha_nova + corpo
         texto = texto[: secao.end()] + corpo + texto[corpo_fim:]

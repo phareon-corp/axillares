@@ -6,12 +6,14 @@ results-passou.xml (2 passam, 1 pulado), gerados pelo cocotb 2.1 da imagem.
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 
 from axillares.core.modelos import CasoTeste, Metrica, SituacaoCaso
 from axillares.motor.base import ErroMotor
 
 RAIZ_NO_CONTEINER = "/projeto/"
+_QUADRO = re.compile(r'File "(/projeto/[^"]+)", line (\d+)')
 
 
 def ler(texto: str) -> list[CasoTeste]:
@@ -46,20 +48,28 @@ def _caso(caso: ET.Element) -> CasoTeste:
     else:
         situacao, resumo, detalhe = SituacaoCaso.PASSOU, "", ""
     arquivo = props.get("file", "")
+    linha = int(props["line"]) if props.get("line", "").isdigit() else None
+    # numa falha, a linha útil é a do assert: o quadro mais fundo do traceback dentro do projeto
+    quadros = _QUADRO.findall(detalhe) if situacao is SituacaoCaso.FALHOU else []
+    if quadros:
+        arquivo, linha = quadros[-1][0], int(quadros[-1][1])
     if arquivo.startswith(RAIZ_NO_CONTEINER):
         arquivo = arquivo[len(RAIZ_NO_CONTEINER) :]
     duracao_sim = props.get("sim_time_duration")
     unidade = props.get("sim_time_unit", "ns")
+    inicio, fim = props.get("sim_time_start"), props.get("sim_time_stop")
     return CasoTeste(
         nome=caso.get("name", "?"),
         modulo=caso.get("classname", ""),
         situacao=situacao,
         duracao_s=float(caso.get("time") or 0.0),
         tempo_simulado_ns=_em_ns(float(duracao_sim), unidade) if duracao_sim else None,
+        inicio_ns=_em_ns(float(inicio), unidade) if inicio else None,
+        fim_ns=_em_ns(float(fim), unidade) if fim else None,
         mensagem=resumo,
         detalhe=detalhe,
         arquivo=arquivo,
-        linha=int(props["line"]) if props.get("line", "").isdigit() else None,
+        linha=linha,
     )
 
 

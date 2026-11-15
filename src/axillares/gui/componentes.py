@@ -177,7 +177,8 @@ class NumeroSecao(QWidget):
         lay.setSpacing(Espaco.S + 2)
         topo = QHBoxLayout()
         topo.setSpacing(Espaco.S)
-        topo.addWidget(rotulo(f"{numero} /", Papel.NUMERO_SECAO, "acento"))
+        self.numero = rotulo(f"{numero} /", Papel.NUMERO_SECAO, "acento")
+        topo.addWidget(self.numero)
         topo.addWidget(rotulo(titulo, Papel.NUMERO_SECAO, "2"))
         topo.addStretch(1)
         self.apoio = rotulo(apoio, Papel.ROTULO, "3")
@@ -186,6 +187,9 @@ class NumeroSecao(QWidget):
         topo.addWidget(self.apoio, 1)
         lay.addLayout(topo)
         lay.addWidget(regua())
+
+    def definir_numero(self, numero: str) -> None:
+        self.numero.setText(f"{numero} /")
 
 
 class Pilula(QWidget):
