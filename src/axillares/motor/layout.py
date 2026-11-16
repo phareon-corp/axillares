@@ -43,6 +43,8 @@ class InfoLayout:
     caixa: tuple[float, float, float, float]
     """Em µm: x1, y1, x2, y2."""
     camadas: list[Camada] = field(default_factory=list)
+    analise: bool = False
+    """Se há regras do PDK para destaques e ponteiras."""
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,13 @@ class Imagem:
     largura: int
     altura: int
     pedido: int
+
+
+def regras_do_pdk(pdk: str) -> dict:
+    """Camadas de dispositivos e de conectividade do PDK (dado, em templates/explicacoes)."""
+    from axillares.core import explicacoes as ex
+
+    return ex.regras_de_layout(pdk)
 
 
 class RenderizadorLayout:
@@ -81,6 +90,14 @@ class RenderizadorLayout:
         self._programa = prog
         klayout = self.perfil.visualizador.get("klayout", "klayout")
         lyp = self.perfil.camadas.get(self.pdk, "")
+        extras = []
+        celulas = self.perfil.celulas_gds.get(self.pdk)
+        if celulas:
+            extras += ["-rd", f"celulas={celulas}"]
+        regras = regras_do_pdk(self.pdk)
+        if regras:
+            (self._saida / "regras.json").write_text(json.dumps(regras), encoding="utf-8")
+            extras += ["-rd", "regras=/saida/regras.json"]
         usuario = (
             ["--userns=keep-id"] if prog.nome == "podman"
             else ["--user", f"{os.getuid()}:{os.getgid()}"]
@@ -93,6 +110,7 @@ class RenderizadorLayout:
             "-e", "HOME=/tmp", "--entrypoint", klayout, self.perfil.imagem.referencia,
             "-zz", "-r", f"/axil/{SERVIDOR.name}",
             "-rd", f"gds=/gds/{self.gds.name}", "-rd", f"lyp={lyp}", "-rd", "saida=/saida",
+            *extras,
         ]  # fmt: skip
 
     def _ler_resposta(self) -> dict:
@@ -128,6 +146,7 @@ class RenderizadorLayout:
                         Camada(c["indice"], c["nome"], c["fonte"], c["cor"])
                         for c in pronto["camadas"]
                     ],
+                    analise=bool(pronto.get("analise")),
                 )
         assert self.info is not None
         return self.info
@@ -140,6 +159,7 @@ class RenderizadorLayout:
         ocultas: set[int] | None = None,
         fundo: str = "#000000",
         niveis: int = 99,
+        extras: str = "sem",
     ) -> Imagem:
         self.iniciar()
         with self._trava:
@@ -149,6 +169,7 @@ class RenderizadorLayout:
                 "op": "render", "id": self._contador, "largura": max(64, int(largura)),
                 "altura": max(64, int(altura)), "caixa": list(caixa) if caixa else None,
                 "ocultas": sorted(ocultas or ()), "fundo": fundo, "niveis": niveis,
+                "extras": extras,
             }  # fmt: skip
             self._processo.stdin.write(json.dumps(pedido) + "\n")
             self._processo.stdin.flush()
@@ -158,6 +179,32 @@ class RenderizadorLayout:
         arquivo = self._saida / Path(resposta["arquivo"]).name
         return Imagem(arquivo, tuple(resposta["caixa"]), resposta["largura"],
                       resposta["altura"], resposta["id"])  # fmt: skip
+
+    def _pedir(self, pedido: dict, acao: str) -> dict:
+        self.iniciar()
+        with self._trava:
+            assert self._processo is not None and self._processo.stdin is not None
+            self._contador += 1
+            self._processo.stdin.write(json.dumps({**pedido, "id": self._contador}) + "\n")
+            self._processo.stdin.flush()
+            resposta = self._ler_resposta()
+        if resposta.get("op") == "erro":
+            raise ErroMotor(f"O KLayout não conseguiu {acao}: {resposta.get('mensagem')}")
+        return resposta
+
+    def destaques(self, ativos: set[str]) -> dict[str, dict]:
+        """Liga os destaques pedidos (pmos, nmos, poco_n, diodo, tap, contato); devolve, para
+        cada um, título, cor e quantos o KLayout achou."""
+        resposta = self._pedir({"op": "destaques", "ativos": sorted(ativos)}, "destacar")
+        return resposta.get("contagem", {})
+
+    def sondar(self, x: float, y: float, raio: float, n: int, cor: str) -> dict:
+        """Ponteira n no ponto (µm): o nó elétrico ali, as camadas e os pinos ligados a ele."""
+        pedido = {"op": "sondar", "x": x, "y": y, "raio": raio, "n": n, "cor": cor}
+        return self._pedir(pedido, "seguir o nó")
+
+    def remover_sonda(self, n: int) -> None:
+        self._pedir({"op": "remover_sonda", "n": n}, "remover a ponteira")
 
     def inspecionar(self, x: float, y: float, raio: float = 0.05) -> dict:
         """Células e formas no ponto (µm), segundo o KLayout."""

@@ -35,6 +35,13 @@ skywater130 = "/foss/pdks/sky130A/libs.tech/klayout/tech/sky130A.lyp"
 gf180 = "/foss/pdks/gf180mcuD/libs.tech/klayout/tech/gf180mcu.lyp"
 ihp130 = "/foss/pdks/ihp-sg13g2/libs.tech/klayout/tech/sg13g2.lyp"
 
+# GDS completo das células padrão: o GDS do fluxo traz as células só com li1 e metais; o
+# visualizador lê este arquivo por cima para mostrar poço, difusão e poly (os transistores).
+[celulas_gds]
+skywater130 = "/foss/pdks/sky130A/libs.ref/sky130_fd_sc_hd/gds/sky130_fd_sc_hd.gds"
+gf180 = "/foss/pdks/gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu9t5v0/gds/gf180mcu_fd_sc_mcu9t5v0.gds"
+ihp130 = "/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/gds/sg13g2_stdcell.gds"
+
 [visualizador]
 klayout = "/foss/tools/klayout/klayout"
 

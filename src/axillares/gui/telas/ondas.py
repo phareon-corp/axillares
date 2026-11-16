@@ -288,6 +288,30 @@ class TelaOndas(QWidget):
             self._pedido = ident
             self.recarregar()
 
+    def mostrar_no(self, nome_no: str) -> None:
+        """Pedido da ponteira do layout: o sinal de mesmo nome (q[3] → q) na onda mais recente,
+        no topo da lista e escolhido."""
+        self._no_pedido = nome_no.split("[")[0]
+        if self._registros and self.onda is not None:
+            self._aplicar_no()
+        else:
+            self.recarregar()
+
+    def _aplicar_no(self) -> None:
+        base = getattr(self, "_no_pedido", None)
+        if not base or self.onda is None:
+            return
+        self._no_pedido = None
+        candidatos = sorted((s for s in self.onda.sinais if s.nome == base),
+                            key=lambda s: s.profundidade)  # fmt: skip
+        if not candidatos:
+            return
+        alvo = candidatos[0].nome_completo
+        linhas = [alvo] + [x for x in self.visor.linhas if x != alvo]
+        self.mostrar_sinais(linhas)
+        self.visor.escolhida = 0
+        self.visor.update()
+
     def ao_mostrar(self) -> None:
         if not self._registros:
             self.recarregar()
@@ -353,6 +377,7 @@ class TelaOndas(QWidget):
         self._preencher_arvore(onda, set(iniciais))
         self.visor.definir(onda, iniciais, faixas)
         self._cursor_mudou(None)
+        self._aplicar_no()
 
     # --- sinais --------------------------------------------------------------------------------
 

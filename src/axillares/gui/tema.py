@@ -60,9 +60,17 @@ class Paleta:
     ok: str = "#4CC38A"
     falha: str = "#F2555A"
     aviso: str = "#E8B34A"
+    # séries — cores distintas para coisas do mesmo tipo (ponteiras, sinais, classes de máscara).
+    # Não são vereditos: identificam, não julgam. A primeira é o acento.
+    series: tuple[str, ...] = (
+        "#FF4A1C", "#38BDF8", "#4CC38A", "#E8B34A", "#C77DFF", "#F472B6", "#A3E635", "#FB923C",
+    )  # fmt: skip
 
     def qcolor(self, token: str) -> QColor:
         return _qcolor(getattr(self, token))
+
+    def serie(self, i: int) -> QColor:
+        return QColor(self.series[i % len(self.series)])
 
 
 ESCURO = Paleta(
@@ -94,6 +102,17 @@ CLARO = Paleta(
     ok="#1E7B4F",
     falha="#C42B30",
     aviso="#8F6200",
+    # no fundo creme, as séries precisam de mais tinta para passar contraste
+    series=(
+        "#E03A10",
+        "#0369A1",
+        "#1E7B4F",
+        "#8F6200",
+        "#7E22CE",
+        "#BE185D",
+        "#4D7C0F",
+        "#C2410C",
+    ),
 )
 
 

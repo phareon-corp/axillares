@@ -130,3 +130,23 @@ def regra_do_verible(regra: str) -> ExplicacaoLint | None:
     """Regras de estilo do Verible (always-comb, case-missing-default…)."""
     dados = _ler("lint.toml").get("verible", {}).get(regra)
     return ExplicacaoLint(**dados) if dados else None
+
+
+ARQUIVOS_PDK = {"skywater130": "sky130.toml"}
+
+
+def regras_de_layout(pdk: str) -> dict:
+    """{"dispositivos": …, "conectividade": …} do PDK; vazio se o PDK não tem esse dado."""
+    arquivo = ARQUIVOS_PDK.get(pdk)
+    if arquivo is None:
+        return {}
+    dados = _ler(arquivo)
+    if "dispositivos" not in dados:
+        return {}
+    return {"dispositivos": dados["dispositivos"], "conectividade": dados.get("conectividade", {})}
+
+
+def classes_de_camadas(pdk: str) -> dict[str, list[str]]:
+    """Classes de máscaras automáticas: nome → prefixos de camada."""
+    arquivo = ARQUIVOS_PDK.get(pdk)
+    return dict(_ler(arquivo).get("classes", {})) if arquivo else {}

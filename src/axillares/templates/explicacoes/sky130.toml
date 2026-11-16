@@ -27,7 +27,7 @@
 
 [grupos]
 # Filtros didáticos: de que passo do fluxo vem cada parte do desenho.
-"Células" = ["prBoundary.boundary", "li1.drawing", "li1.pin", "li1.label", "mcon.drawing"]
+"Células" = ["prBoundary.boundary", "nwell.drawing", "diff.drawing", "tap.drawing", "psdm.drawing", "nsdm.drawing", "poly.drawing", "licon1.drawing", "li1.drawing", "li1.pin", "li1.label", "mcon.drawing"]
 "Fios de sinal" = ["met1.drawing", "via.drawing", "met2.drawing", "met2.pin", "via2.drawing", "met3.drawing", "met3.pin"]
 "Alimentação" = ["met1.drawing", "via3.drawing", "met4.drawing", "via4.drawing", "met5.drawing", "met5.pin"]
 
@@ -90,3 +90,38 @@ lpflow = "Célula de baixo consumo (isolamento ou retenção)."
 "^o\\d+a$" = "Porta composta OR-AND: ORs seguidos de um AND."
 "^a\\d+bo" = "Porta composta AND-OR com uma entrada invertida."
 "^o\\d+bai" = "Porta composta OR-AND-INVERT com uma entrada invertida."
+
+# --- Análise do layout (KLayout na imagem) ------------------------------------------------
+# Camadas GDS (camada/datatype) que formam cada estrutura. Quem faz as operações booleanas e a
+# extração de conectividade é o KLayout; aqui só se diz quais camadas entram.
+[dispositivos]
+poco_n = "64/20"     # nwell.drawing
+difusao = "65/20"    # diff.drawing
+porta = "66/20"      # poly.drawing — onde cruza a difusão, há um transistor
+tap = "65/44"        # tap.drawing — contato com o poço/substrato
+contato = "66/44"    # licon1.drawing
+diodo = "81/23"      # areaid.diode — marcador de diodo do PDK
+
+[conectividade]
+# Condutores de baixo para cima, alternando com as vias. "sd" é a difusão menos o poly: fonte e
+# dreno ficam separados pela porta.
+cadeia = [["sd"], ["66/44"], ["67/20", "67/16"], ["67/44"], ["68/20", "68/16"], ["68/44"], ["69/20", "69/16"], ["69/44"], ["70/20", "70/16"], ["70/44"], ["71/20", "71/16"], ["71/44"], ["72/20", "72/16"]]
+porta = ["66/20"]
+tap = ["65/44"]
+# rótulo → camada que ele nomeia (os nomes dos nós vêm daqui: clk, q[3], VPWR…)
+rotulos = { "67/5" = "67/20", "68/5" = "68/20", "69/5" = "69/20", "70/5" = "70/20", "71/5" = "71/20", "72/5" = "72/20" }
+# a ponteira procura nesta ordem: o que está mais em cima no desenho primeiro
+ordem_sonda = ["72/20", "71/20", "70/20", "69/20", "68/20", "67/20", "66/20", "sd"]
+
+[classes]
+# Classes de máscaras geradas automaticamente: nome → prefixos das camadas.
+"Poços" = ["nwell", "pwell", "dnwell"]
+"Difusão e implantes" = ["diff", "tap", "psdm", "nsdm", "hvtp", "lvtn", "hvi"]
+"Poly (portas)" = ["poly", "npc"]
+"Contatos" = ["licon1", "mcon"]
+"Interligação local (li1)" = ["li1"]
+"Metal 1" = ["met1", "via"]
+"Metal 2" = ["met2", "via2"]
+"Metal 3" = ["met3", "via3"]
+"Metal 4 e 5" = ["met4", "via4", "met5"]
+"Marcadores" = ["prBoundary", "areaid", "text", "boundary"]

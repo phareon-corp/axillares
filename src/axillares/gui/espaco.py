@@ -100,8 +100,34 @@ class AreaProjeto(QWidget):
         self.pilha.setCurrentIndex(indice - PROJETO)
         if indice == LAYOUT:
             self.layout_.ao_mostrar()
+            self._sinais_para_o_layout()
         elif indice == ONDAS:
             self.ondas.ao_mostrar()
+
+    def _sinais_para_o_layout(self) -> None:
+        """Nomes da onda mais recente: a ponteira oferece "ver na onda" quando o nó existe lá."""
+        caderno = self.sessao.caderno
+        if caderno is None:
+            return
+
+        def ler() -> set[str]:
+            from axillares.core import verificacao
+            from axillares.motor.ondas import ErroOnda, Onda
+
+            for r in caderno.listar():
+                if r.etapa.verifica:
+                    caminho = verificacao.onda(caderno.carregar(r.id))
+                    if caminho is not None:
+                        try:
+                            return {s.nome for s in Onda(caminho).sinais}
+                        except ErroOnda:
+                            return set()
+            return set()
+
+        tarefa = tarefas.em_segundo_plano(ler, self)
+        tarefa.concluido.connect(self.layout_.definir_sinais_na_onda)
+        tarefa.iniciar()
+        self._tarefa_sinais = tarefa
 
     @property
     def executando(self) -> bool:

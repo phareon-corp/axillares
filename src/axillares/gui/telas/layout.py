@@ -10,7 +10,16 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPaintEvent, QPen, QPixmap
+from PySide6.QtGui import (
+    QBitmap,
+    QColor,
+    QImage,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -25,19 +34,24 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from axillares.core import classes_camadas
 from axillares.core import explicacoes as ex
 from axillares.core import formato as fmt
 from axillares.core.caderno import Caderno, RegistroExecucao
+from axillares.core.classes_camadas import Classe
 from axillares.core.modelos import Etapa, Situacao, TipoArtefato
 from axillares.gui import tarefas
 from axillares.gui import tema as t
 from axillares.gui.componentes import Eyebrow, botao, repolir, rotulo
 from axillares.gui.sessao import Sessao
 from axillares.gui.telas.execucoes import _segmentos
+from axillares.gui.telas.layout_analise import DialogoClasse, LinhaClasse, PainelAnalise
 from axillares.gui.tema import Espaco, Papel
 
 Caixa = tuple[float, float, float, float]
 PASSO_ZOOM = 1.25
+ABA_CAMADAS, ABA_CLASSES, ABA_ANALISE, ABA_INSPETOR, ABA_ORIGEM = range(5)
+PRETO_ARGB = 0xFF000000  # fundo dos destaques: vira transparente na sobreposição
 
 
 class Prancheta(QWidget):
@@ -60,6 +74,10 @@ class Prancheta(QWidget):
         self._arrasto: QPointF | None = None
         self._inicio_clique: QPointF | None = None
         self.destaque: Caixa | None = None
+        self._sobreposicao: QPixmap | None = None
+        self._caixa_sobreposicao: Caixa | None = None
+        self.marcas: list[tuple[int, float, float, QColor]] = []
+        """Ponteiras: (número, x µm, y µm, cor)."""
         t.tema().mudou.connect(self._tema_mudou)
 
     # --- geometria ----------------------------------------------------------------------------
@@ -92,10 +110,36 @@ class Prancheta(QWidget):
         self._caixa_imagem = caixa
         self.update()
 
+    def definir_sobreposicao(self, imagem: QImage | None, caixa: Caixa | None) -> None:
+        """Destaques e ponteiras, desenhados pelo KLayout sobre fundo preto: o preto vira
+        transparente e o layout de baixo esmaece, para o que interessa saltar aos olhos."""
+        if imagem is None:
+            self._sobreposicao = None
+        else:
+            # (no Qt 6, o bitmap lê esta máscara invertida: MaskInColor deixa o preto transparente)
+            mascara = imagem.createMaskFromColor(PRETO_ARGB, Qt.MaskMode.MaskInColor)
+            pixmap = QPixmap.fromImage(imagem)
+            pixmap.setMask(QBitmap.fromImage(mascara))
+            self._sobreposicao = pixmap
+        self._caixa_sobreposicao = caixa
+        self.update()
+
     def limpar(self) -> None:
         self._imagem = None
         self._caixa_imagem = None
+        self._sobreposicao = None
+        self.marcas = []
         self.update()
+
+    def _retangulo(self, caixa: Caixa) -> QRectF:
+        x1, _y1, _x2, y2 = self.caixa()
+        ix1, iy1, ix2, iy2 = caixa
+        return QRectF((ix1 - x1) / self.escala, (y2 - iy2) / self.escala,
+                      (ix2 - ix1) / self.escala, (iy2 - iy1) / self.escala)  # fmt: skip
+
+    def para_tela(self, x: float, y: float) -> QPointF:
+        x1, _y1, _x2, y2 = self.caixa()
+        return QPointF((x - x1) / self.escala, (y2 - y) / self.escala)
 
     # --- desenho ------------------------------------------------------------------------------
 
@@ -104,16 +148,15 @@ class Prancheta(QWidget):
         p = QPainter(self)
         p.fillRect(self.rect(), pal.qcolor("fundo"))
         if self._imagem is not None and self._caixa_imagem is not None:
-            x1, _y1, _x2, y2 = self.caixa()
-            ix1, iy1, ix2, iy2 = self._caixa_imagem
-            alvo = QRectF(
-                (ix1 - x1) / self.escala,
-                (y2 - iy2) / self.escala,
-                (ix2 - ix1) / self.escala,
-                (iy2 - iy1) / self.escala,
-            )
+            alvo = self._retangulo(self._caixa_imagem)
             p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            if self._sobreposicao is not None:
+                p.setOpacity(0.45)  # o layout vira pano de fundo
             p.drawPixmap(alvo, self._imagem, QRectF(self._imagem.rect()))
+            p.setOpacity(1.0)
+        if self._sobreposicao is not None and self._caixa_sobreposicao is not None:
+            alvo = self._retangulo(self._caixa_sobreposicao)
+            p.drawPixmap(alvo, self._sobreposicao, QRectF(self._sobreposicao.rect()))
         if self.destaque is not None:
             x1, _y1, _x2, y2 = self.caixa()
             dx1, dy1, dx2, dy2 = self.destaque
@@ -125,7 +168,27 @@ class Prancheta(QWidget):
             p.fillRect(r, halo)
             p.setPen(QPen(pal.qcolor("acento"), 2))
             p.drawRect(r)
+        self._marcas(p)
         self._regua(p)
+
+    def _marcas(self, p: QPainter) -> None:
+        """Ponteiras: um alfinete numerado em cada ponto sondado."""
+        pal = t.paleta()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setFont(t.fonte(Papel.ETIQUETA))
+        for n, x, y, cor in self.marcas:
+            ponta = self.para_tela(x, y)
+            cabeca = QPointF(ponta.x() + 14, ponta.y() - 22)
+            p.setPen(QPen(cor, 2))
+            p.drawLine(ponta, cabeca)
+            p.setBrush(cor)
+            p.drawEllipse(ponta, 3, 3)
+            p.setPen(QPen(pal.qcolor("fundo"), 2))
+            p.drawEllipse(cabeca, 11, 11)
+            p.setPen(pal.qcolor("sobre_acento"))
+            p.drawText(QRectF(cabeca.x() - 11, cabeca.y() - 11, 22, 22),
+                       Qt.AlignmentFlag.AlignCenter, f"P{n}")  # fmt: skip
+        p.setBrush(Qt.BrushStyle.NoBrush)
 
     def _regua(self, p: QPainter) -> None:
         """Barra de escala no canto: o número tem unidade (Phareon)."""
@@ -301,11 +364,18 @@ class PainelLayout(QFrame):
     vista_mudou = Signal(object)
     aberto = Signal(object)
     inspecao = Signal(object, dict)
+    analise_mudou = Signal(object)
+    """Destaques ou ponteiras deste painel mudaram."""
     erro = Signal(str)
 
     def __init__(self, letra: str) -> None:
         super().__init__()
         self.letra = letra
+        self.modo = "inspecionar"
+        """"inspecionar" (o que há no ponto) ou "ponteira" (seguir o nó elétrico)."""
+        self.destaques: set[str] = set()
+        self.contagem: dict = {}
+        self.sondas: dict[int, dict] = {}
         self.setProperty("tipo", "painel-layout")
         self.render = None
         self.registro: RegistroExecucao | None = None
@@ -455,11 +525,16 @@ class PainelLayout(QFrame):
         x1, y1, x2, y2 = info.caixa
         self.dimensoes.setText(f"{fmt.numero(x2 - x1, 2)} × {fmt.numero(y2 - y1, 2)} µm")
         self.ocultas = set()
+        self.destaques, self.contagem, self.sondas = set(), {}, {}
         self.prancheta.destaque = None
         self.prancheta.limites = info.caixa
         self.prancheta.limpar()
         self.prancheta.enquadrar()
-        self.aviso.setText("clique: inspecionar")
+        self.aviso.setText("clique: inspecionar" if self.modo == "inspecionar"
+                           else "clique: pôr uma ponteira")  # fmt: skip
+        if info.analise:
+            # a contagem de dispositivos já aparece na aba Análise, mesmo sem destaque ligado
+            self.definir_destaques(set())
         self.aviso.setToolTip("roda: zoom · arrastar: mover · duplo clique: enquadrar")
         self.aberto.emit(self)
 
@@ -494,20 +569,86 @@ class PainelLayout(QFrame):
         caixa = self.prancheta.caixa()
         ocultas = set(self.ocultas)
         fundo = t.paleta().fundo
+        com_extras = bool(self.destaques or self.sondas)
+        preto = QColor(Qt.GlobalColor.black).name()
 
         def desenhar():
             imagem = render.renderizar(largura, altura, caixa, ocultas, fundo)
-            return render, QImage(str(imagem.arquivo)), imagem.caixa
+            base = QImage(str(imagem.arquivo))
+            extra = None
+            if com_extras:
+                sobre = render.renderizar(largura, altura, caixa, ocultas, preto, extras="so")
+                extra = QImage(str(sobre.arquivo))
+            return render, base, imagem.caixa, extra
 
         self._rodar(desenhar, self._desenhado, self._falhou_render)
 
-    def _desenhado(self, trio) -> None:
-        render, imagem, caixa = trio
+    def _desenhado(self, resultado) -> None:
+        render, imagem, caixa, extra = resultado
         self._renderizando = False
         if render is self.render and not imagem.isNull():
             self.prancheta.definir_imagem(imagem, tuple(caixa))
+            self.prancheta.definir_sobreposicao(extra, tuple(caixa) if extra else None)
         if self._pendente:
             self._renderizar()
+
+    # --- análise: destaques e ponteiras -------------------------------------------------------
+
+    def definir_destaques(self, ativos: set[str]) -> None:
+        if self.render is None:
+            return
+        render = self.render
+        self.destaques = set(ativos)
+
+        def aplicar(contagem: dict) -> None:
+            if render is self.render:
+                self.contagem = contagem
+                self.agendar()
+                self.analise_mudou.emit(self)
+
+        self._rodar(lambda: render.destaques(set(ativos)), aplicar)
+
+    def cor_da_sonda(self, n: int) -> str:
+        return t.paleta().series[(n - 1) % len(t.paleta().series)]
+
+    def _sondar(self, x: float, y: float) -> None:
+        if self.render is None:
+            return
+        render = self.render
+        n = next(i for i in range(1, 99) if i not in self.sondas)
+        cor = self.cor_da_sonda(n)
+        raio = max(0.02, self.prancheta.escala * 4)
+
+        def mostrar(dados: dict) -> None:
+            if render is not self.render:
+                return
+            if not dados.get("no") and not dados.get("dispositivo"):
+                self.aviso.setText("Nenhum condutor nesse ponto: clique num fio, pino ou porta.")
+                return
+            self.sondas[n] = dados
+            self._atualizar_marcas()
+            self.agendar()
+            self.analise_mudou.emit(self)
+
+        self._rodar(lambda: render.sondar(x, y, raio, n, cor), mostrar)
+
+    def remover_sonda(self, n: int) -> None:
+        if self.render is None or n not in self.sondas:
+            return
+        render = self.render
+        self.sondas.pop(n)
+        self._atualizar_marcas()
+        self.analise_mudou.emit(self)
+        self._rodar(lambda: render.remover_sonda(n), lambda _x: self.agendar())
+
+    def limpar_sondas(self) -> None:
+        for n in list(self.sondas):
+            self.remover_sonda(n)
+
+    def _atualizar_marcas(self) -> None:
+        self.prancheta.marcas = [(n, d["x"], d["y"], QColor(self.cor_da_sonda(n)))
+                                 for n, d in sorted(self.sondas.items())]  # fmt: skip
+        self.prancheta.update()
 
     def _falhou_render(self, mensagem: str) -> None:
         self._renderizando = False
@@ -523,6 +664,9 @@ class PainelLayout(QFrame):
     def _inspecionar(self, x: float, y: float) -> None:
         self.ativado.emit(self)
         if self.info is None:
+            return
+        if self.modo == "ponteira" and self.info.analise:
+            self._sondar(x, y)
             return
         render, raio = self.render, max(0.02, self.prancheta.escala * 3)
 
@@ -575,6 +719,10 @@ class TelaLayout(QWidget):
         self._pedido_inicial: str | None = None
         self._tarefas: list[tarefas.Tarefa] = []
         self._sincronizando = False
+        self.modo = "inspecionar"
+        self.classes: list[Classe] = []
+        self._linhas_classe: list[LinhaClasse] = []
+        self._chave_classes: tuple | None = None
 
         raiz = QHBoxLayout(self)
         raiz.setContentsMargins(0, 0, 0, 0)
@@ -593,6 +741,15 @@ class TelaLayout(QWidget):
         self._lay_chips.setSpacing(4)
         bl.addLayout(self._lay_chips)
         bl.addStretch(1)
+        modos, self._grupo_modo = _segmentos(
+            [("Inspecionar", "inspecionar"), ("Ponteira", "ponteira")], self.definir_modo
+        )
+        self._grupo_modo.button(0).setToolTip("Clique num ponto: o que existe ali")
+        self._grupo_modo.button(1).setToolTip(
+            "Clique num fio: o KLayout segue o nó elétrico (como as ponteiras do Microwind)"
+        )
+        bl.addLayout(modos)
+        bl.addSpacing(Espaco.S)
         self.botao_dividir = botao("+ Dividir", "compacto")
         self.botao_dividir.setToolTip("Abre outro painel ao lado, para comparar layouts")
         self.botao_dividir.clicked.connect(self.dividir)
@@ -625,8 +782,8 @@ class TelaLayout(QWidget):
     def _montar_lateral(self) -> QFrame:
         lateral = QFrame()
         lateral.setProperty("tipo", "lateral-editor")
-        lateral.setMinimumWidth(240)
-        lateral.setMaximumWidth(320)
+        lateral.setMinimumWidth(270)
+        lateral.setMaximumWidth(360)
         ll = QVBoxLayout(lateral)
         ll.setContentsMargins(Espaco.M + 2, Espaco.L, Espaco.M, Espaco.M)
         ll.setSpacing(Espaco.S)
@@ -636,8 +793,9 @@ class TelaLayout(QWidget):
         self.nome_celula.setWordWrap(True)
         ll.addWidget(self.nome_celula)
         abas, self._grupo_abas = _segmentos(
-            [("Camadas", 0), ("Inspetor", 1), ("Origem", 2)], self._trocar_aba
-        )
+            [("Camadas", ABA_CAMADAS), ("Classes", ABA_CLASSES), ("Análise", ABA_ANALISE),
+             ("Inspetor", ABA_INSPETOR), ("Origem", ABA_ORIGEM)], self._trocar_aba,
+        )  # fmt: skip
         ll.addLayout(abas)
         self.paginas = QStackedWidget()
         ll.addWidget(self.paginas, 1)
@@ -669,6 +827,56 @@ class TelaLayout(QWidget):
         self.sobre_camada.setWordWrap(True)
         pl.addWidget(self.sobre_camada)
         self.paginas.addWidget(pagina)
+
+        # classes de máscaras
+        pagina = QWidget()
+        kl = QVBoxLayout(pagina)
+        kl.setContentsMargins(0, Espaco.S, 0, 0)
+        kl.setSpacing(Espaco.S)
+        explica = rotulo("Grupos de camadas que ligam e desligam juntos. Gere a partir do layout "
+                         "ou monte os seus.", Papel.PEQUENO, "2")  # fmt: skip
+        explica.setWordWrap(True)
+        kl.addWidget(explica)
+        acoes = QHBoxLayout()
+        nova = botao("+ Classe", "compacto")
+        nova.clicked.connect(lambda: self.editar_classe(None))
+        gerar = botao("Gerar do layout", "compacto")
+        gerar.setToolTip("Refaz as classes a partir das camadas deste layout")
+        gerar.clicked.connect(self.gerar_classes)
+        acoes.addWidget(nova)
+        acoes.addWidget(gerar)
+        acoes.addStretch(1)
+        kl.addLayout(acoes)
+        rolagem_k = QScrollArea()
+        rolagem_k.setWidgetResizable(True)
+        rolagem_k.setFrameShape(QFrame.Shape.NoFrame)
+        rolagem_k.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        lista_k = QWidget()
+        self._lay_classes = QVBoxLayout(lista_k)
+        self._lay_classes.setContentsMargins(0, 0, 0, 0)
+        self._lay_classes.setSpacing(3)
+        self._lay_classes.addStretch(1)
+        rolagem_k.setWidget(lista_k)
+        kl.addWidget(rolagem_k, 1)
+        self.onde_classes = rotulo("", Papel.ROTULO, "3")
+        self.onde_classes.setWordWrap(True)
+        kl.addWidget(self.onde_classes)
+        self.paginas.addWidget(pagina)
+
+        # análise: destaques e ponteiras
+        rolagem_a = QScrollArea()
+        rolagem_a.setWidgetResizable(True)
+        rolagem_a.setFrameShape(QFrame.Shape.NoFrame)
+        rolagem_a.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.analise = PainelAnalise()
+        self.analise.destaques_mudaram.connect(
+            lambda ativos: self.ativo and self.ativo.definir_destaques(ativos)
+        )
+        self.analise.remover_sonda.connect(lambda n: self.ativo and self.ativo.remover_sonda(n))
+        self.analise.limpar_sondas.connect(lambda: self.ativo and self.ativo.limpar_sondas())
+        self.analise.ver_onda.connect(lambda no: self.sessao.pedir_tela.emit("onda-no", no))
+        rolagem_a.setWidget(self.analise)
+        self.paginas.addWidget(rolagem_a)
 
         pagina = QWidget()
         il = QVBoxLayout(pagina)
@@ -739,7 +947,9 @@ class TelaLayout(QWidget):
         painel.vista_mudou.connect(self._propagar_vista)
         painel.aberto.connect(self._painel_aberto)
         painel.inspecao.connect(self._mostrar_inspecao)
+        painel.analise_mudou.connect(self._analise_mudou)
         painel.erro.connect(self.sessao.erro)
+        painel.modo = self.modo
         self.paineis.append(painel)
         self.divisor.addWidget(painel)
         tamanhos = [1000] * self.divisor.count()
@@ -810,6 +1020,36 @@ class TelaLayout(QWidget):
         if mudou:
             self._mostrar_camadas()
             self._atualizar_chips()
+
+    def definir_modo(self, modo: object) -> None:
+        self.modo = str(modo)
+        self._grupo_modo.button(0 if self.modo == "inspecionar" else 1).setChecked(True)
+        for p in self.paineis:
+            p.modo = self.modo
+            if p.info is not None:
+                p.aviso.setText("clique: inspecionar" if self.modo == "inspecionar"
+                                else "clique: pôr uma ponteira")  # fmt: skip
+        if self.modo == "ponteira":
+            self._trocar_aba(ABA_ANALISE)
+
+    def _analise_mudou(self, painel: PainelLayout) -> None:
+        if painel is not self.ativo:
+            return
+        self.analise.definir_estado(painel.destaques, painel.contagem)
+        cores = {n: painel.cor_da_sonda(n) for n in painel.sondas}
+        self.analise.definir_sondas(painel.sondas, cores, self.sinais_na_onda)
+        if painel.sondas and self.paginas.currentIndex() != ABA_ANALISE:
+            self._trocar_aba(ABA_ANALISE)
+
+    @property
+    def sinais_na_onda(self) -> set[str]:
+        """Nomes curtos de sinais na última onda do projeto (para o "ver na onda")."""
+        return getattr(self, "_sinais_na_onda", set())
+
+    def definir_sinais_na_onda(self, nomes: set[str]) -> None:
+        self._sinais_na_onda = set(nomes)
+        if self.ativo is not None:
+            self._analise_mudou(self.ativo)
 
     def _painel_aberto(self, painel: PainelLayout) -> None:
         if painel is self.ativo:
@@ -900,6 +1140,121 @@ class TelaLayout(QWidget):
             self._caixas[c.indice] = linha
             self._lay_camadas.insertWidget(self._lay_camadas.count() - 1, linha)
         self._grupo_filtros.button(0).setChecked(not p.ocultas)
+        self.analise.definir_disponivel(info.analise)
+        self._analise_mudou(p)
+        self._carregar_classes()
+
+    # --- classes de máscaras ------------------------------------------------------------------
+
+    @property
+    def _pdk(self) -> str:
+        r = self.ativo.registro if self.ativo else None
+        return (r.pdk if r else None) or "skywater130"
+
+    def _camadas_do_ativo(self) -> list[tuple[str, str, str]]:
+        info = self.ativo.info if self.ativo else None
+        return [(c.nome, c.fonte, c.cor) for c in info.camadas] if info else []
+
+    def _carregar_classes(self) -> None:
+        projeto = self.sessao.projeto
+        camadas = self._camadas_do_ativo()
+        if not camadas:
+            self.classes = []
+            self._mostrar_classes()
+            return
+        chave = (projeto.raiz if projeto else None, self._pdk)
+        salvas = None
+        if projeto is not None:
+            try:
+                salvas = classes_camadas.carregar(projeto.raiz, self._pdk)
+            except classes_camadas.ErroClasses as erro:
+                self.sessao.erro.emit(str(erro))
+        self.classes = salvas if salvas is not None else classes_camadas.gerar(camadas, self._pdk)
+        self._chave_classes = chave
+        origem = "salvas no projeto" if salvas is not None else "geradas do layout"
+        self.onde_classes.setText(f"{len(self.classes)} classes · {origem}")
+        self._mostrar_classes()
+
+    def _mostrar_classes(self) -> None:
+        while self._lay_classes.count() > 1:
+            item = self._lay_classes.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._linhas_classe = []
+        fonte_para_indice = {c.fonte: c.indice for c in (self.ativo.info.camadas
+                             if self.ativo and self.ativo.info else [])}  # fmt: skip
+        ocultas = self._ocultas
+        for i, classe in enumerate(self.classes):
+            indices = {fonte_para_indice[f] for f in classe.camadas if f in fonte_para_indice}
+            visivel = bool(indices) and not indices <= ocultas
+            linha = LinhaClasse(i, classe, visivel)
+            linha.alternada.connect(self._alternar_classe)
+            linha.isolada.connect(self._isolar_classe)
+            linha.editar.connect(lambda i: self.editar_classe(i))
+            linha.remover.connect(self._remover_classe)
+            self._linhas_classe.append(linha)
+            self._lay_classes.insertWidget(self._lay_classes.count() - 1, linha)
+
+    def _indices_da_classe(self, i: int) -> set[int]:
+        info = self.ativo.info if self.ativo else None
+        if info is None:
+            return set()
+        fontes = set(self.classes[i].camadas)
+        return {c.indice for c in info.camadas if c.fonte in fontes}
+
+    def _alternar_classe(self, i: int, visivel: bool) -> None:
+        ocultas = set(self._ocultas)
+        indices = self._indices_da_classe(i)
+        ocultas = (ocultas - indices) if visivel else (ocultas | indices)
+        self._aplicar_ocultas(ocultas)
+
+    def _isolar_classe(self, i: int) -> None:
+        info = self.ativo.info if self.ativo else None
+        if info is None:
+            return
+        todas = {c.indice for c in info.camadas}
+        self._aplicar_ocultas(todas - self._indices_da_classe(i))
+
+    def _aplicar_ocultas(self, ocultas: set[int]) -> None:
+        for indice, linha in self._caixas.items():
+            linha.definir(indice not in ocultas)
+        self._definir_ocultas(ocultas)
+
+    def editar_classe(self, i: int | None) -> None:
+        camadas = self._camadas_do_ativo()
+        if not camadas:
+            self.sessao.erro.emit("Abra um layout antes de criar classes.")
+            return
+        dialogo = DialogoClasse(camadas, self.classes[i] if i is not None else None, self)
+        if dialogo.exec() != DialogoClasse.DialogCode.Accepted:
+            return
+        nova = dialogo.classe()
+        classes = list(self.classes)
+        if i is None:
+            classes.append(nova)
+        else:
+            classes[i] = nova
+        self._salvar_classes(classes)
+
+    def _remover_classe(self, i: int) -> None:
+        self._salvar_classes([c for j, c in enumerate(self.classes) if j != i])
+
+    def gerar_classes(self) -> None:
+        camadas = self._camadas_do_ativo()
+        if camadas:
+            self._salvar_classes(classes_camadas.gerar(camadas, self._pdk))
+
+    def _salvar_classes(self, classes: list[Classe]) -> None:
+        projeto = self.sessao.projeto
+        try:
+            if projeto is not None:
+                classes_camadas.salvar(projeto.raiz, self._pdk, classes)
+        except classes_camadas.ErroClasses as erro:
+            self.sessao.erro.emit(str(erro))
+            return
+        self.classes = classes
+        self.onde_classes.setText(f"{len(classes)} classes · salvas no projeto")
+        self._mostrar_classes()
 
     @property
     def _ocultas(self) -> set[int]:
@@ -910,6 +1265,8 @@ class TelaLayout(QWidget):
             return
         self.ativo.ocultas = ocultas
         self.ativo.agendar()
+        if self._linhas_classe:
+            self._mostrar_classes()
 
     def _alternar(self, indice: int, visivel: bool) -> None:
         ocultas = set(self._ocultas)
@@ -939,7 +1296,7 @@ class TelaLayout(QWidget):
         indice = [None, "Células", "Fios de sinal", "Alimentação"].index(grupo)
         self._grupo_filtros.button(indice).setChecked(True)
         if trocar:
-            self._trocar_aba(0)
+            self._trocar_aba(ABA_CAMADAS)
 
     def _todas(self, visiveis: bool) -> None:
         for linha in self._caixas.values():
@@ -951,7 +1308,7 @@ class TelaLayout(QWidget):
 
     def _mostrar_inspecao(self, painel: PainelLayout, dados: dict) -> None:
         self.ativar(painel)
-        self._trocar_aba(1)
+        self._trocar_aba(ABA_INSPETOR)
         while self._lay_inspetor.count():
             item = self._lay_inspetor.takeAt(0)
             if item.widget():

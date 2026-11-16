@@ -496,6 +496,9 @@ class JanelaPrincipal(QMainWindow):
             caminho, linha = argumento
             self.ir_para(EDITOR)
             area.editor.abrir(Path(caminho).resolve(), int(linha))
+        elif nome == "onda-no":
+            area.ondas.mostrar_no(str(argumento))
+            self.ir_para(ONDAS)
         elif nome == "onda":
             area.ondas.mostrar_execucao(str(argumento))
             self.ir_para(ONDAS)
