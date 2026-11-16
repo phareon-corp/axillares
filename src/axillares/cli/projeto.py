@@ -290,6 +290,9 @@ def onda(
     sinais: bool = typer.Option(
         False, "--sinais", help="Lista os sinais e quantas vezes mudam, sem abrir nada."
     ),
+    atividade: bool = typer.Option(
+        False, "--atividade", help="Atividade de cada sinal: trocas, α por ciclo, frequência."
+    ),
 ) -> None:
     """Abre a onda de uma simulação ou teste (Surfer; GTKWave com --com gtkwave)."""
     from axillares.ambiente.abrir import abrir_onda
@@ -316,6 +319,9 @@ def onda(
     caminho = verificacao.onda(registro)
     if caminho is None:
         raise _erro(f"A execução #{registro.numero} ({registro.etapa.value}) não tem onda.")
+    if atividade:
+        _mostrar_atividade(caminho)
+        return
     if sinais:
         from axillares.motor.ondas import ErroOnda, Onda
 
@@ -501,9 +507,20 @@ def layout(
     saida: Path = typer.Option(Path("layout.png"), "--saida", "-o", help="Imagem PNG a gravar."),
     largura: int = typer.Option(1600, "--largura", help="Largura em pixels."),
     altura: int = typer.Option(1200, "--altura", help="Altura em pixels."),
+    destaques: str = typer.Option(
+        "", "--destaques", help="Na imagem, por cima: pmos,nmos,poco_n,diodo,tap,contato."
+    ),
+    dispositivos: bool = typer.Option(
+        False, "--dispositivos", help="Conta transistores, poços, diodos, taps e contatos."
+    ),
+    sonda: list[str] = typer.Option(
+        [], "--sonda", help="Ponteira em x,y (µm): o nó elétrico ali. Pode repetir."
+    ),
     pasta: Path | None = OpcaoProjeto,
 ) -> None:
-    """Desenha o layout (GDS) de uma execução numa imagem, pelo KLayout da imagem de ferramentas."""
+    """Desenha o layout (GDS) de uma execução numa imagem, pelo KLayout da imagem de ferramentas.
+
+    Também conta dispositivos e segue nós elétricos (ponteiras), como na tela Layout."""
     from axillares.motor.base import ErroMotor
     from axillares.motor.layout import RenderizadorLayout
 
@@ -519,8 +536,26 @@ def layout(
     try:
         with RenderizadorLayout(r.diretorio / gds.caminho, pdk) as render:
             info = render.iniciar()
-            imagem = render.renderizar(largura, altura, fundo="#08080B")
-            saida.write_bytes(imagem.arquivo.read_bytes())
+            pedidos = {x.strip() for x in destaques.split(",") if x.strip()}
+            contagem = render.destaques(pedidos) if (pedidos or dispositivos) else {}
+            sondas = []
+            for i, texto in enumerate(sonda, start=1):
+                try:
+                    x, y = (float(v) for v in texto.split(","))
+                except ValueError as erro:
+                    raise _erro(
+                        f"--sonda espera x,y em µm, como 12.5,8 (veio “{texto}”)."
+                    ) from erro
+                sondas.append(render.sondar(x, y, 0.1, i, "#FF4A1C"))
+            if pedidos or sondas:
+                # o mesmo que a tela faz: layout de fundo e, por cima, só os destaques
+                base = render.renderizar(largura, altura, fundo="#08080B")
+                saida.write_bytes(base.arquivo.read_bytes())
+                extra = render.renderizar(largura, altura, fundo="#000000", extras="so")
+                saida.with_suffix(".destaques.png").write_bytes(extra.arquivo.read_bytes())
+            else:
+                imagem = render.renderizar(largura, altura, fundo="#08080B")
+                saida.write_bytes(imagem.arquivo.read_bytes())
     except ErroMotor as erro:
         raise _erro(str(erro), 1) from erro
     x1, y1, x2, y2 = info.caixa
@@ -529,6 +564,23 @@ def layout(
         f"{fmt.numero(x2 - x1, 2)} × {fmt.numero(y2 - y1, 2)} µm · {len(info.camadas)} camadas · "
         f"PDK {pdk}[/]"
     )
+    if pedidos or sondas:
+        console.print(f"  [dim]destaques e ponteiras à parte, sobre fundo preto:[/] "
+                      f"{saida.with_suffix('.destaques.png')}")  # fmt: skip
+    if contagem and (dispositivos or pedidos):
+        for dados in contagem.values():
+            console.print(f"  {dados['titulo']:<26} [bold]{dados['quantos']}[/]")
+    for s in sondas:
+        if not s.get("no"):
+            console.print(f"[yellow]·[/] P{s['n']} ({s['x']}, {s['y']}): nenhum condutor ali.")
+            continue
+        dentro = f" (dentro de {s['dentro']['celula'].split('__')[-1]})" if s.get("dentro") else ""
+        pinos = ", ".join(f"{p['celula'].split('__')[-1]}.{p['pino']}" for p in s["pinos"][:8])
+        from axillares.core.explicacoes import NOMES_CAMADA_CONDUTORA as NOMES
+
+        camadas = ", ".join(NOMES.get(k, k) for k in s["camadas"])
+        liga = f" · liga {pinos}" if pinos else ""
+        console.print(f"[bold]P{s['n']}[/] nó [bold]{s['no']}[/]{dentro} · {camadas}{liga}")
 
 
 # --- placas -------------------------------------------------------------------------------
@@ -593,3 +645,43 @@ def arquivo(
     console.print(f"[bold green]✓[/] {projeto.relativo(novo.caminho)} criado.")
     if novo.aviso:
         console.print(f"[bold yellow]![/] {novo.aviso}")
+
+
+def _mostrar_atividade(caminho: Path) -> None:
+    from axillares.core import atividade as at
+    from axillares.motor.ondas import ErroOnda, Onda
+
+    try:
+        o = Onda(caminho)
+    except ErroOnda as erro:
+        raise _erro(str(erro)) from erro
+    por_unidade = o.em_ps(1) * 1e-12
+    candidatos = [(s.nome_completo, s.largura, o.mudancas(s.nome_completo)) for s in o.sinais]
+    relogio = at.relogio_de_referencia(candidatos)
+    ciclos = None
+    if relogio:
+        ciclos = at.analisar(relogio, 1, o.mudancas(relogio), o.fim, por_unidade).subidas or None
+    console.print(f"[bold]{caminho.name}[/] [dim]· relógio de referência: "
+                  f"{relogio or 'nenhum'}{f' · {ciclos} ciclos' if ciclos else ''}[/]")  # fmt: skip
+    tabela = Table(box=None, padding=(0, 2), header_style="dim")
+    for coluna, justificar in (("sinal", "left"), ("trocas", "right"), ("α/ciclo", "right"),
+                               ("em 1", "right"), ("frequência", "right"),
+                               ("pulso mín.", "right")):  # fmt: skip
+        tabela.add_column(coluna, justify=justificar)
+    for s in o.sinais:
+        if s.tipo == "Parameter":
+            continue
+        a = at.analisar(s.nome_completo, s.largura, o.mudancas(s.nome_completo), o.fim,
+                        por_unidade, ciclos)  # fmt: skip
+        tabela.add_row(
+            s.nome_completo + (f"[{s.largura - 1}:0]" if s.largura > 1 else ""),
+            str(a.transicoes),
+            fmt.numero(a.por_ciclo, 2) if a.por_ciclo is not None else "—",
+            f"{fmt.numero(a.alto_pct, 0)} %" if a.alto_pct is not None else "—",
+            f"{fmt.numero(a.frequencia_hz / 1e6, 2)} MHz" if a.periodico and a.frequencia_hz
+            else "—",
+            f"{fmt.numero(a.pulso_min_s * 1e9, 2)} ns" if a.pulso_min_s else "—",
+        )  # fmt: skip
+    console.print(tabela)
+    console.print("[dim]α por ciclo: trocas ÷ ciclos do relógio. Pesa no consumo dinâmico "
+                  "(P ≈ α·C·V²·f); o relógio tem α = 2.[/]")  # fmt: skip

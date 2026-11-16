@@ -150,3 +150,11 @@ def classes_de_camadas(pdk: str) -> dict[str, list[str]]:
     """Classes de máscaras automáticas: nome → prefixos de camada."""
     arquivo = ARQUIVOS_PDK.get(pdk)
     return dict(_ler(arquivo).get("classes", {})) if arquivo else {}
+
+
+# Nomes legíveis das camadas condutoras que a ponteira devolve (sky130).
+NOMES_CAMADA_CONDUTORA = {
+    "sd": "difusão (fonte/dreno)", "porta": "poly (porta)", "66/44": "licon", "67/20": "li1",
+    "67/44": "mcon", "68/20": "met1", "68/44": "via", "69/20": "met2", "69/44": "via2",
+    "70/20": "met3", "70/44": "via3", "71/20": "met4", "71/44": "via4", "72/20": "met5",
+}  # fmt: skip

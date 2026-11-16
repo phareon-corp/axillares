@@ -16,6 +16,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPen, QRadialGradient
 from PySide6.QtWidgets import (
     QBoxLayout,
+    QButtonGroup,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -479,6 +480,9 @@ class GradeResponsiva(QFrame):
         self._min = min_coluna
         self._max = max_colunas
         self._itens: list[QWidget] = []
+        self._vazias: list[QWidget] = []
+        """Células neutras nas posições vazias da última linha: sem elas, o fundo da grade (a cor
+        das linhas divisórias) aparecia como um bloco."""
         self._colunas = 0
         self._grade = QGridLayout(self)
         self._grade.setContentsMargins(0, 0, 0, 0)
@@ -506,8 +510,19 @@ class GradeResponsiva(QFrame):
         self._colunas = colunas
         for w in self._itens:
             self._grade.removeWidget(w)
+        for w in self._vazias:
+            self._grade.removeWidget(w)
+            w.deleteLater()
+        self._vazias = []
         for i, w in enumerate(self._itens):
             self._grade.addWidget(w, i // colunas, i % colunas)
+        sobra = (-len(self._itens)) % colunas if len(self._itens) > colunas else 0
+        for k in range(sobra):
+            vazia = QFrame()
+            vazia.setProperty("tipo", "celula-vazia")
+            i = len(self._itens) + k
+            self._grade.addWidget(vazia, i // colunas, i % colunas)
+            self._vazias.append(vazia)
         for c in range(self._max):
             self._grade.setColumnStretch(c, 1 if c < colunas else 0)
 
@@ -553,3 +568,25 @@ class _MargemResponsiva(QObject):
             if lay is not None and lay.contentsMargins().left() != lado:
                 lay.setContentsMargins(lado, self._topo, lado, self._base)
         return False
+
+
+# --- segmentos ----------------------------------------------------------------------------------
+
+
+def segmentos(opcoes: list[tuple[str, object]], ao_mudar) -> tuple[QHBoxLayout, QButtonGroup]:
+    lay = QHBoxLayout()
+    lay.setSpacing(0)
+    grupo = QButtonGroup(lay)
+    for i, (texto, valor) in enumerate(opcoes):
+        b = QPushButton(texto)
+        b.setProperty("tipo", "segmento")
+        b.setProperty("posicao", "inicio" if i == 0 else "fim" if i == len(opcoes) - 1 else "meio")
+        b.setFont(t.fonte(Papel.SEGMENTO))
+        b.setCheckable(True)
+        b.setChecked(i == 0)
+        b.setMinimumWidth(48)
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        b.clicked.connect(lambda _c=False, v=valor: ao_mudar(v))
+        grupo.addButton(b, i)
+        lay.addWidget(b)
+    return lay, grupo

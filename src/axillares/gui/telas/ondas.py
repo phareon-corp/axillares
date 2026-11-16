@@ -10,11 +10,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, Signal
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
     QHBoxLayout,
     QLineEdit,
+    QMenu,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QTreeWidget,
@@ -37,8 +40,10 @@ from axillares.gui.componentes import (
     rotulo,
     tom_da_situacao,
 )
+from axillares.gui.componentes import segmentos as _segmentos
 from axillares.gui.sessao import Sessao
 from axillares.gui.telas.abertura import CartaoDiagnostico
+from axillares.gui.telas.ondas_analise import PainelAnaliseOndas
 from axillares.gui.tema import Espaco, Papel
 from axillares.gui.visor_ondas import Faixa, VisorOndas, texto_tempo
 from axillares.motor.ondas import FATORES_PS, ErroOnda, Onda
@@ -153,6 +158,20 @@ class TelaOndas(QWidget):
             z.clicked.connect(acao)
             b.addWidget(z)
         b.addSpacing(Espaco.S)
+        alturas, self._grupo_altura = _segmentos(
+            [("P", "compacta"), ("M", "normal"), ("G", "grande")], self._altura
+        )
+        for i, dica in enumerate(("Linhas compactas", "Linhas normais", "Linhas grandes")):
+            self._grupo_altura.button(i).setToolTip(dica)
+        self._grupo_altura.button(1).setChecked(True)
+        b.addLayout(alturas)
+        self.botao_analise = botao("Análise", "compacto")
+        self.botao_analise.setCheckable(True)
+        self.botao_analise.setChecked(True)
+        self.botao_analise.setToolTip("Atividade, medição entre cursores e histograma")
+        self.botao_analise.toggled.connect(self._alternar_analise)
+        b.addWidget(self.botao_analise)
+        b.addSpacing(Espaco.S)
         self.combo_fora = QComboBox()
         self.combo_fora.setFont(t.fonte(Papel.PEQUENO))
         self.combo_fora.addItem("Surfer", "surfer")
@@ -205,7 +224,18 @@ class TelaOndas(QWidget):
         m.setSpacing(0)
         self.visor = VisorOndas()
         self.visor.cursor_mudou.connect(self._cursor_mudou)
-        m.addWidget(self.visor, 1)
+        self.visor.linha_escolhida.connect(lambda _n: self.analise.atualizar())
+        self.visor.menu_da_linha.connect(self._menu_da_linha)
+        self.analise = PainelAnaliseOndas(self.visor)
+        self.analise.setProperty("tipo", "lateral-editor")
+        vertical = QSplitter(Qt.Orientation.Vertical)
+        vertical.setHandleWidth(1)
+        vertical.setChildrenCollapsible(False)
+        vertical.addWidget(self.visor)
+        vertical.addWidget(self.analise)
+        vertical.setStretchFactor(0, 1)
+        vertical.setSizes([560, 280])
+        m.addWidget(vertical, 1)
         estado = QFrame()
         estado.setProperty("tipo", "barra-estado")
         e = QHBoxLayout(estado)
@@ -213,8 +243,12 @@ class TelaOndas(QWidget):
         self.info = rotulo("", Papel.ETIQUETA, "2")
         e.addWidget(self.info)
         e.addStretch(1)
-        e.addWidget(rotulo("CLIQUE: CURSOR · ARRASTE: MOVER · CTRL+RODA: ZOOM · ← →: PRÓXIMA "
-                           "MUDANÇA · F: AJUSTAR", Papel.ETIQUETA, "3"))  # fmt: skip
+        atalhos = rotulo("CLIQUE: CURSOR A · SHIFT+CLIQUE: CURSOR B · ARRASTE: MOVER · CTRL+RODA: "
+                         "ZOOM · ← →: PRÓXIMA MUDANÇA · BOTÃO DIREITO NO NOME: OPÇÕES",
+                         Papel.ETIQUETA, "3")  # fmt: skip
+        atalhos.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        atalhos.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        e.addWidget(atalhos, 1)
         estado.setFixedHeight(30)
         m.addWidget(estado)
         divisor.addWidget(miolo)
@@ -376,6 +410,7 @@ class TelaOndas(QWidget):
         iniciais = onda.sinais_iniciais()
         self._preencher_arvore(onda, set(iniciais))
         self.visor.definir(onda, iniciais, faixas)
+        self.analise.preparar()
         self._cursor_mudou(None)
         self._aplicar_no()
 
@@ -416,6 +451,7 @@ class TelaOndas(QWidget):
         elif item.checkState(0) == Qt.CheckState.Unchecked and nome in linhas:
             linhas.remove(nome)
         self.visor.definir_linhas(linhas)
+        self.analise.atualizar()
 
     def mostrar_sinais(self, nomes: list[str]) -> None:
         """Marca exatamente estes sinais (na ordem dada)."""
@@ -446,7 +482,45 @@ class TelaOndas(QWidget):
             b.setChecked(chave == base)
         self.visor.definir_base(base)
 
+    def _altura(self, nome: object) -> None:
+        self.visor.definir_altura(str(nome))
+
+    def _alternar_analise(self, ligado: bool) -> None:
+        self.analise.setVisible(ligado)
+        if ligado:
+            self.analise.atualizar()
+
+    def _menu_da_linha(self, nome: str, posicao) -> None:
+        """Botão direito no nome de um sinal: como desenhar, que cor, tirar da lista."""
+        onda = self.onda
+        if onda is None:
+            return
+        sinal = next((s for s in onda.sinais if s.nome_completo == nome), None)
+        menu = QMenu(self)
+        if sinal is not None and sinal.largura > 1:
+            atual = self.visor.modos.get(nome, "digital")
+            for modo, texto in (("digital", "Digital (valores)"),
+                                ("analogico", "Analógico (curva do número)")):  # fmt: skip
+                acao = menu.addAction(texto)
+                acao.setCheckable(True)
+                acao.setChecked(atual == modo)
+                acao.triggered.connect(lambda _c=False, m=modo: self.visor.definir_modo(nome, m))
+            menu.addSeparator()
+        cores = menu.addMenu("Cor")
+        for i in range(len(t.paleta().series)):
+            pixmap = QPixmap(14, 14)
+            pixmap.fill(t.paleta().serie(i))
+            acao = cores.addAction(QIcon(pixmap), f"Cor {i + 1}")
+            acao.triggered.connect(lambda _c=False, k=i: self.visor.definir_cor(nome, k))
+        menu.addSeparator()
+        remover = menu.addAction("Tirar da lista")
+        remover.triggered.connect(
+            lambda: self.mostrar_sinais([x for x in self.visor.linhas if x != nome])
+        )
+        menu.exec(posicao)
+
     def _cursor_mudou(self, tempo: object) -> None:
+        self.analise.atualizar()
         onda = self.onda
         if onda is None:
             self.info.setText("")

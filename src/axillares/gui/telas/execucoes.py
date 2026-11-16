@@ -8,11 +8,9 @@ from pathlib import Path
 from PySide6.QtCore import QSettings, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QCheckBox,
     QHBoxLayout,
     QPlainTextEdit,
-    QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -40,30 +38,11 @@ from axillares.gui.componentes import (
     tela_rolavel,
     tom_da_situacao,
 )
+from axillares.gui.componentes import segmentos as _segmentos
 from axillares.gui.sessao import Sessao
 from axillares.gui.telas.abertura import CartaoDiagnostico
 from axillares.gui.telas.ondas import CHAVE_VISUALIZADOR
 from axillares.gui.tema import Espaco, Papel
-
-
-def _segmentos(opcoes: list[tuple[str, object]], ao_mudar) -> tuple[QHBoxLayout, QButtonGroup]:
-    lay = QHBoxLayout()
-    lay.setSpacing(0)
-    grupo = QButtonGroup(lay)
-    for i, (texto, valor) in enumerate(opcoes):
-        b = QPushButton(texto)
-        b.setProperty("tipo", "segmento")
-        b.setProperty("posicao", "inicio" if i == 0 else "fim" if i == len(opcoes) - 1 else "meio")
-        b.setFont(t.fonte(Papel.SEGMENTO))
-        b.setCheckable(True)
-        b.setChecked(i == 0)
-        b.setMinimumWidth(48)
-        b.setCursor(Qt.CursorShape.PointingHandCursor)
-        b.clicked.connect(lambda _c=False, v=valor: ao_mudar(v))
-        grupo.addButton(b, i)
-        lay.addWidget(b)
-    return lay, grupo
-
 
 # --- lista ------------------------------------------------------------------------------------
 

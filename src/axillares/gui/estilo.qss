@@ -121,6 +121,19 @@ QCheckBox::indicator {
 }
 QCheckBox::indicator:hover { border-color: ${tinta_2}; }
 QCheckBox::indicator:checked { background: ${acento}; border-color: ${acento}; }
+QTreeView::indicator, QListView::indicator {
+    width: 13px; height: 13px; border: 1px solid ${linha_forte}; border-radius: 3px;
+    background: ${fundo};
+}
+QTreeView::indicator:hover, QListView::indicator:hover { border-color: ${tinta_2}; }
+QTreeView::indicator:checked, QListView::indicator:checked {
+    background: ${acento}; border-color: ${acento};
+}
+QFrame[tipo="celula-vazia"] { background: ${fundo}; }
+QFrame[tipo="linha-classe"]:hover { background: ${fundo_2}; }
+QFrame[tipo="cartao-sonda"] {
+    background: ${fundo_2}; border: 1px solid ${linha}; border-radius: ${raio_l}px;
+}
 
 QFrame[tipo="linha-tabela"][selecionavel="sim"]:hover { background: ${fundo_2}; }
 QFrame[tipo="painel-execucao"] {

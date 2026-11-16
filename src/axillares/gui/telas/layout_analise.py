@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 
 from axillares.core import formato as fmt
 from axillares.core.classes_camadas import Classe
+from axillares.core.explicacoes import NOMES_CAMADA_CONDUTORA
 from axillares.gui import tema as t
 from axillares.gui.componentes import botao, repolir, rotulo
 from axillares.gui.tema import Espaco, Papel
@@ -47,11 +48,6 @@ EXPLICA_DESTAQUE = {
     "contato": "Os furos (licon) que ligam difusão e poly ao primeiro nível de fio (li1).",
 }
 ORDEM_DESTAQUES = ("pmos", "nmos", "poco_n", "diodo", "tap", "contato")
-NOMES_CAMADA_CONDUTORA = {
-    "sd": "difusão (fonte/dreno)", "porta": "poly (porta)", "66/44": "licon", "67/20": "li1",
-    "67/44": "mcon", "68/20": "met1", "68/44": "via", "69/20": "met2", "69/44": "via2",
-    "70/20": "met3", "70/44": "via3", "71/20": "met4", "71/44": "via4", "72/20": "met5",
-}  # fmt: skip
 
 
 class Amostra(QWidget):
