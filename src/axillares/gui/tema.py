@@ -358,6 +358,16 @@ def tema() -> Tema:
     return _tema
 
 
+# Impressão (pranchas técnicas e exportação "preto no branco"): independe do tema da tela. As
+# cores dos níveis lógicos continuam distinguíveis em impressora colorida e viram tons de cinza
+# diferentes numa monocromática.
+IMPRESSAO = {
+    "tinta": "#000000", "tenue": "#444444", "fundo": "#FFFFFF", "acento": "#B00020",
+    "nivel1": "#1B7F3B", "nivel0": "#1F4E9E", "indefinido": "#B00020", "solto": "#9A6A00",
+    "barramento": "#6A2C91",
+}  # fmt: skip
+
+
 def paleta() -> Paleta:
     return tema().paleta
 

@@ -39,6 +39,7 @@ from axillares.gui.componentes import (
 from axillares.gui.sessao import Sessao
 from axillares.gui.telas.comparar import TelaComparar
 from axillares.gui.telas.editor import TelaEditor
+from axillares.gui.telas.esquema import TelaEsquema
 from axillares.gui.telas.execucoes import TelaExecucoes
 from axillares.gui.telas.layout import TelaLayout
 from axillares.gui.telas.ondas import TelaOndas
@@ -47,7 +48,7 @@ from axillares.gui.tema import Espaco, Papel
 from axillares.motor import Motor
 
 # índices das telas (01 Abertura é global e fica fora da área)
-ABERTURA, PROJETO, EDITOR, EXECUCOES, LAYOUT, COMPARAR, ONDAS = range(7)
+ABERTURA, PROJETO, EDITOR, EXECUCOES, LAYOUT, COMPARAR, ONDAS, ESQUEMA = range(8)
 
 FontesDeExecucoes = Callable[[], list[tuple[str, Caderno]]]
 
@@ -78,7 +79,9 @@ class AreaProjeto(QWidget):
         self.comparar = TelaComparar(self.sessao)
         self.ondas = TelaOndas(self.sessao)
         self.ondas.pedir_execucao.connect(self.sessao.executar)
-        telas = (self.projeto, self.editor, self.execucoes, self.layout_, self.comparar, self.ondas)
+        self.esquema = TelaEsquema(self.sessao)
+        telas = (self.projeto, self.editor, self.execucoes, self.layout_, self.comparar, self.ondas,
+                 self.esquema)  # fmt: skip
         for tela in telas:
             self.pilha.addWidget(tela)
         self.indice = PROJETO
@@ -103,6 +106,8 @@ class AreaProjeto(QWidget):
             self._sinais_para_o_layout()
         elif indice == ONDAS:
             self.ondas.ao_mostrar()
+        elif indice == ESQUEMA:
+            self.esquema.ao_mostrar()
 
     def _sinais_para_o_layout(self) -> None:
         """Nomes da onda mais recente: a ponteira oferece "ver na onda" quando o nó existe lá."""

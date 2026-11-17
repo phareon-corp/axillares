@@ -1,0 +1,124 @@
+# Esquemático: que símbolo desenhar para cada tipo de célula e o que ela é.
+#
+# [yosys]          tipos internos do Yosys (níveis RTL e portas lógicas), pelo nome exato;
+# [padroes_yosys]  os mesmos, por expressão regular (flip-flops têm dezenas de variantes);
+# [familias]       famílias de células do PDK (sem prefixo e sem força: "a21oi", "nand2"),
+#                  por expressão regular, NA ORDEM — a primeira que casar vence;
+# [simbolos]       explicação genérica de cada símbolo, quando a célula não tem uma própria.
+#
+# Símbolos que o visor desenha: and nand or nor xor xnor not buf tribuf mux registrador latch
+# operador comparador deslocador somador_completo complexa memoria celula modulo constante.
+
+[yosys]
+"$add" = { simbolo = "operador", rotulo = "+", texto = "Somador: soma dois números. Na síntese vira uma cadeia de meio-somadores e somadores completos (portas XOR e E)." }
+"$sub" = { simbolo = "operador", rotulo = "−", texto = "Subtrator: A − B, feito como soma com o complemento de dois de B." }
+"$mul" = { simbolo = "operador", rotulo = "×", texto = "Multiplicador: uma matriz de portas E e somadores — cresce com o quadrado do número de bits." }
+"$div" = { simbolo = "operador", rotulo = "÷", texto = "Divisor: muito caro em portas lógicas; evite em hardware sempre que der (use deslocamentos)." }
+"$mod" = { simbolo = "operador", rotulo = "mod", texto = "Resto da divisão: tão caro quanto o divisor." }
+"$neg" = { simbolo = "operador", rotulo = "−x", texto = "Troca de sinal (complemento de dois)." }
+"$pos" = { simbolo = "buf", rotulo = "", texto = "Passa o valor adiante sem mudar (vem de um + unário ou de ajuste de largura)." }
+"$eq" = { simbolo = "comparador", rotulo = "=", texto = "Comparador de igualdade: 1 quando A e B são iguais. Na síntese: XNOR bit a bit e uma porta E larga." }
+"$ne" = { simbolo = "comparador", rotulo = "≠", texto = "Comparador de diferença: 1 quando A e B diferem." }
+"$eqx" = { simbolo = "comparador", rotulo = "===", texto = "Igualdade que também compara X e Z (só faz sentido em simulação)." }
+"$nex" = { simbolo = "comparador", rotulo = "!==", texto = "Diferença que também compara X e Z." }
+"$lt" = { simbolo = "comparador", rotulo = "<", texto = "Comparador “menor que”: feito com um subtrator, olhando o vai-um." }
+"$le" = { simbolo = "comparador", rotulo = "≤", texto = "Comparador “menor ou igual”." }
+"$gt" = { simbolo = "comparador", rotulo = ">", texto = "Comparador “maior que”." }
+"$ge" = { simbolo = "comparador", rotulo = "≥", texto = "Comparador “maior ou igual”." }
+"$and" = { simbolo = "and", rotulo = "", texto = "E bit a bit (operador &): cada bit da saída é o E dos bits das entradas." }
+"$or" = { simbolo = "or", rotulo = "", texto = "OU bit a bit (operador |)." }
+"$xor" = { simbolo = "xor", rotulo = "", texto = "OU exclusivo bit a bit (operador ^): 1 onde os bits diferem." }
+"$xnor" = { simbolo = "xnor", rotulo = "", texto = "XNOR bit a bit: 1 onde os bits são iguais." }
+"$not" = { simbolo = "not", rotulo = "", texto = "Inversor bit a bit (operador ~)." }
+"$logic_not" = { simbolo = "not", rotulo = "!", texto = "NÃO lógico (operador !): 1 quando o valor inteiro é zero." }
+"$logic_and" = { simbolo = "and", rotulo = "&&", texto = "E lógico (operador &&): trata cada lado como verdadeiro se não for zero." }
+"$logic_or" = { simbolo = "or", rotulo = "||", texto = "OU lógico (operador ||)." }
+"$reduce_and" = { simbolo = "and", rotulo = "&", texto = "Redução E (&x): 1 só se todos os bits forem 1." }
+"$reduce_or" = { simbolo = "or", rotulo = "|", texto = "Redução OU (|x): 1 se algum bit for 1." }
+"$reduce_bool" = { simbolo = "or", rotulo = "≠0", texto = "Teste de não zero: 1 se algum bit for 1." }
+"$reduce_xor" = { simbolo = "xor", rotulo = "^", texto = "Redução OU exclusivo (^x): a paridade — 1 se houver um número ímpar de uns." }
+"$reduce_xnor" = { simbolo = "xnor", rotulo = "~^", texto = "Redução XNOR: 1 se houver um número par de uns." }
+"$shl" = { simbolo = "deslocador", rotulo = "<<", texto = "Deslocamento à esquerda: multiplica por potências de 2. Com quantidade variável, vira uma escada de multiplexadores." }
+"$shr" = { simbolo = "deslocador", rotulo = ">>", texto = "Deslocamento à direita: divide por potências de 2." }
+"$sshl" = { simbolo = "deslocador", rotulo = "<<<", texto = "Deslocamento aritmético à esquerda." }
+"$sshr" = { simbolo = "deslocador", rotulo = ">>>", texto = "Deslocamento aritmético à direita: repete o bit de sinal." }
+"$shift" = { simbolo = "deslocador", rotulo = "»", texto = "Deslocamento com quantidade com sinal." }
+"$shiftx" = { simbolo = "deslocador", rotulo = "[ ]", texto = "Seleção de parte com índice variável (x[i +: n]): uma escada de multiplexadores." }
+"$mux" = { simbolo = "mux", rotulo = "", texto = "Multiplexador: escolhe A (S=0) ou B (S=1). Vem de um if/else ou de um operador ? :." }
+"$pmux" = { simbolo = "mux", rotulo = "", texto = "Multiplexador de várias entradas, uma por bit de S — é o que um case vira." }
+"$bmux" = { simbolo = "mux", rotulo = "", texto = "Multiplexador binário: S escolhe uma de 2ⁿ entradas." }
+"$demux" = { simbolo = "mux", rotulo = "", texto = "Demultiplexador: manda a entrada para a saída que S escolhe." }
+"$tribuf" = { simbolo = "tribuf", rotulo = "", texto = "Buffer de três estados: com EN em 0, solta o fio (Z)." }
+"$dff" = { simbolo = "registrador", rotulo = "", texto = "Registrador: flip-flops D que guardam o valor a cada borda do relógio." }
+"$dffe" = { simbolo = "registrador", rotulo = "", texto = "Registrador com habilitação: só guarda o valor novo quando EN está ativo." }
+"$adff" = { simbolo = "registrador", rotulo = "", texto = "Registrador com reset assíncrono: ARST zera (ou carrega um valor) na hora, sem esperar o relógio." }
+"$adffe" = { simbolo = "registrador", rotulo = "", texto = "Registrador com reset assíncrono e habilitação — o que um always @(posedge clk or negedge rst_n) com if (en) vira." }
+"$sdff" = { simbolo = "registrador", rotulo = "", texto = "Registrador com reset síncrono: o reset só vale na borda do relógio." }
+"$sdffe" = { simbolo = "registrador", rotulo = "", texto = "Registrador com reset síncrono e habilitação." }
+"$sdffce" = { simbolo = "registrador", rotulo = "", texto = "Registrador com reset síncrono que respeita a habilitação." }
+"$aldff" = { simbolo = "registrador", rotulo = "", texto = "Registrador com carga assíncrona." }
+"$aldffe" = { simbolo = "registrador", rotulo = "", texto = "Registrador com carga assíncrona e habilitação." }
+"$dffsr" = { simbolo = "registrador", rotulo = "", texto = "Registrador com set e reset assíncronos por bit." }
+"$dffsre" = { simbolo = "registrador", rotulo = "", texto = "Registrador com set, reset e habilitação." }
+"$dlatch" = { simbolo = "latch", rotulo = "", texto = "Latch: transparente enquanto EN está ativo. Quase sempre é um engano — falta um else ou um default num bloco combinacional." }
+"$adlatch" = { simbolo = "latch", rotulo = "", texto = "Latch com reset assíncrono." }
+"$mem" = { simbolo = "memoria", rotulo = "RAM", texto = "Memória: um vetor de palavras (reg [7:0] m [0:15]). Na síntese ASIC vira flip-flops, a menos que haja macro de SRAM." }
+"$mem_v2" = { simbolo = "memoria", rotulo = "RAM", texto = "Memória: um vetor de palavras. Na síntese ASIC vira flip-flops, a menos que haja macro de SRAM." }
+"$memrd" = { simbolo = "memoria", rotulo = "leitura", texto = "Porta de leitura de uma memória." }
+"$memwr" = { simbolo = "memoria", rotulo = "escrita", texto = "Porta de escrita de uma memória." }
+"$_AND_" = { simbolo = "and", rotulo = "", texto = "Porta E: 1 só quando as duas entradas são 1." }
+"$_NAND_" = { simbolo = "nand", rotulo = "", texto = "Porta NAND (E negado): 0 só quando as duas entradas são 1. Em CMOS é a porta mais barata: 4 transistores." }
+"$_OR_" = { simbolo = "or", rotulo = "", texto = "Porta OU: 1 quando alguma entrada é 1." }
+"$_NOR_" = { simbolo = "nor", rotulo = "", texto = "Porta NOR (OU negado): 1 só quando as duas entradas são 0." }
+"$_XOR_" = { simbolo = "xor", rotulo = "", texto = "Porta OU exclusivo: 1 quando as entradas são diferentes. É o bit de soma de um somador." }
+"$_XNOR_" = { simbolo = "xnor", rotulo = "", texto = "Porta XNOR: 1 quando as entradas são iguais." }
+"$_ANDNOT_" = { simbolo = "and", rotulo = "A·B̄", texto = "E com a segunda entrada negada." }
+"$_ORNOT_" = { simbolo = "or", rotulo = "A+B̄", texto = "OU com a segunda entrada negada." }
+"$_NOT_" = { simbolo = "not", rotulo = "", texto = "Inversor (porta NÃO): troca 0 por 1. Em CMOS, um pMOS e um nMOS." }
+"$_BUF_" = { simbolo = "buf", rotulo = "", texto = "Buffer: repete o sinal." }
+"$_MUX_" = { simbolo = "mux", rotulo = "", texto = "Multiplexador de 1 bit: Y = S ? B : A." }
+"$_NMUX_" = { simbolo = "mux", rotulo = "", texto = "Multiplexador de 1 bit com saída invertida." }
+"$_TBUF_" = { simbolo = "tribuf", rotulo = "", texto = "Buffer de três estados de 1 bit." }
+
+[padroes_yosys]
+'^\$_(S|A|AL)?DFFS?R?E?_' = { simbolo = "registrador", rotulo = "", texto = "Flip-flop D de 1 bit: guarda um bit a cada borda do relógio. As letras do nome dizem a borda (P subida, N descida), o reset (0/1) e a habilitação (E)." }
+'^\$_SDFFC?E?_' = { simbolo = "registrador", rotulo = "", texto = "Flip-flop D de 1 bit com reset síncrono." }
+'^\$_DLATCH' = { simbolo = "latch", rotulo = "", texto = "Latch de 1 bit: transparente enquanto o EN está ativo." }
+'^\$_(AOI|OAI)\d_' = { simbolo = "complexa", rotulo = "", texto = "Porta complexa E-OU-inversora: várias portas numa só, com menos transistores." }
+
+[familias]
+'^(fill|tap|decap|diode|endcap|antenna|lpflow_decapkapwr|filltie|endcap)' = "fisica"
+'^(nand\d+b?|nand\db)' = "nand"
+'^nor\d' = "nor"
+'^and\d' = "and"
+'^or\d' = "or"
+'^xnor\d' = "xnor"
+'^xor\d' = "xor"
+'^(clk)?inv' = "not"
+'^(e(inv|buf)|bufz|invz)' = "tribuf"
+'^(clk)?(buf|dly)|^dlygate|^dlymetal|^lpflow_.*buf' = "buf"
+'^mux\d|^mxi?\d|^mux' = "mux"
+'^(conb|tie)' = "constante"
+'^(fa|ha|fah|maj|addf|addh)' = "somador_completo"
+'^(dl[xrhl]|dlat|lat|dlyg)' = "latch"
+'^(s?e?df|dff|sdff|icg|sdfb|dfb)' = "registrador"
+'^(a\d|o\d|aoi|oai|a2bb|o2bb)' = "complexa"
+
+[simbolos]
+nand = "Porta NAND da biblioteca."
+nor = "Porta NOR da biblioteca."
+and = "Porta E da biblioteca (por dentro, uma NAND seguida de um inversor)."
+or = "Porta OU da biblioteca (por dentro, uma NOR seguida de um inversor)."
+xor = "Porta OU exclusivo da biblioteca."
+xnor = "Porta XNOR da biblioteca."
+not = "Inversor da biblioteca."
+buf = "Buffer da biblioteca: repete o sinal com mais força."
+tribuf = "Buffer ou inversor de três estados."
+mux = "Multiplexador da biblioteca."
+constante = "Célula de amarração: fornece um 0 ou um 1 fixo ao circuito."
+somador_completo = "Somador da biblioteca: soma bits com vai-um numa célula só."
+latch = "Latch da biblioteca."
+registrador = "Flip-flop da biblioteca: guarda 1 bit a cada borda do relógio."
+complexa = "Porta complexa (E-OU-inversora ou OU-E-inversora): várias portas numa célula, com menos transistores e menos atraso."
+celula = "Célula da biblioteca do PDK."
+fisica = "Célula física, sem função lógica: enchimento (fill), ligação do substrato e do poço (tap), capacitor de desacoplamento (decap) ou diodo de antena. O fluxo físico a põe para o chip ser fabricável; não aparece no desenho."

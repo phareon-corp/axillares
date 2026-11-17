@@ -158,3 +158,8 @@ NOMES_CAMADA_CONDUTORA = {
     "67/44": "mcon", "68/20": "met1", "68/44": "via", "69/20": "met2", "69/44": "via2",
     "70/20": "met3", "70/44": "via3", "71/20": "met4", "71/44": "via4", "72/20": "met5",
 }  # fmt: skip
+
+
+def esquema() -> dict:
+    """Símbolos do esquemático: tipos do Yosys, famílias de células e textos (esquema.toml)."""
+    return _ler("esquema.toml")

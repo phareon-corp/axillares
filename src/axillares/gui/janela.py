@@ -35,6 +35,7 @@ from axillares.gui.espaco import (
     ABERTURA,
     COMPARAR,
     EDITOR,
+    ESQUEMA,
     EXECUCOES,
     LAYOUT,
     ONDAS,
@@ -59,6 +60,7 @@ SECOES = (
     ("05", "Layout", True),
     ("06", "Comparar", True),
     ("07", "Ondas", True),
+    ("08", "Esquema", True),
 )
 
 
@@ -109,7 +111,7 @@ class Trilho(QFrame):
         self.projeto.setContentsMargins(Espaco.M + 2, 0, Espaco.M, 0)
         self.projeto.setWordWrap(True)
         lay.addWidget(self.projeto)
-        breve = rotulo("08   Trilha · em breve", Papel.ROTULO, "3")
+        breve = rotulo("09   Trilha · em breve", Papel.ROTULO, "3")
         self._expandidos += [self.projeto, breve]
         breve.setContentsMargins(Espaco.M + 2, Espaco.M, Espaco.M, 0)
         lay.addWidget(breve)
@@ -458,7 +460,9 @@ class JanelaPrincipal(QMainWindow):
 
     def _ajustar_trilho(self) -> None:
         # Editor e Layout precisam de largura; em janelas estreitas, todas as telas também
-        self.trilho.compactar(self.indice in (EDITOR, LAYOUT, ONDAS) or self.width() < 1180)
+        self.trilho.compactar(
+            self.indice in (EDITOR, LAYOUT, ONDAS, ESQUEMA) or self.width() < 1180
+        )
 
     def resizeEvent(self, evento) -> None:
         super().resizeEvent(evento)

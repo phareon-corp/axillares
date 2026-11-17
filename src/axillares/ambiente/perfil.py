@@ -9,6 +9,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from axillares.ambiente.complementos import Complemento
+
 PASTA_PERFIS = Path(__file__).parent / "perfis"
 PERFIL_PADRAO = "iic-osic-2026.10"
 
@@ -99,6 +101,21 @@ class Perfil(_Modelo):
     )
     celulas_gds: dict[str, str] = Field(
         default_factory=dict, description="GDS completo das células padrão, por PDK, na imagem."
+    )
+    celulas_lib: dict[str, str] = Field(
+        default_factory=dict, description="Liberty típico das células padrão, por PDK, na imagem."
+    )
+    celulas_spice: dict[str, str] = Field(
+        default_factory=dict, description="Netlist SPICE das células (transistores), por PDK."
+    )
+    celulas_verilog: dict[str, list[str]] = Field(
+        default_factory=dict, description="Modelos Verilog das células (simulação), por PDK."
+    )
+    celulas_verilog_defines: dict[str, list[str]] = Field(
+        default_factory=dict, description="Defines para simular os modelos das células."
+    )
+    complementos: dict[str, Complemento] = Field(
+        default_factory=dict, description="Arquivos de terceiros baixados à parte (elkjs)."
     )
     editor: dict[str, str] = Field(
         default_factory=dict,

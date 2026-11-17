@@ -42,6 +42,40 @@ skywater130 = "/foss/pdks/sky130A/libs.ref/sky130_fd_sc_hd/gds/sky130_fd_sc_hd.g
 gf180 = "/foss/pdks/gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu9t5v0/gds/gf180mcu_fd_sc_mcu9t5v0.gds"
 ihp130 = "/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/gds/sg13g2_stdcell.gds"
 
+# Esquemático: o Yosys lê a netlist do fluxo com as células como caixas-pretas (liberty)
+# e o KLayout lê o SPICE de cada célula para mostrar os transistores. Verificado em 2026-11-17.
+[celulas_lib]
+skywater130 = "/foss/pdks/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib"
+gf180 = "/foss/pdks/gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu9t5v0/lib/gf180mcu_fd_sc_mcu9t5v0__tt_025C_5v00.lib"
+ihp130 = "/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/lib/sg13g2_stdcell_typ_1p20V_25C.lib"
+
+[celulas_spice]
+skywater130 = "/foss/pdks/sky130A/libs.ref/sky130_fd_sc_hd/spice/sky130_fd_sc_hd.spice"
+gf180 = "/foss/pdks/gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu9t5v0/spice/gf180mcu_fd_sc_mcu9t5v0.spice"
+ihp130 = "/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/spice/sg13g2_stdcell.spice"
+
+# Simulação do esquemático no nível de células: modelos Verilog funcionais da biblioteca.
+# Com a netlist pós-roteamento (pinos de alimentação), o Axillares acrescenta USE_POWER_PINS.
+# sky130 e gf180 verificados em 2026-11-17; IHP sem execução real ainda.
+[celulas_verilog]
+skywater130 = ["/foss/pdks/sky130A/libs.ref/sky130_fd_sc_hd/verilog/primitives.v", "/foss/pdks/sky130A/libs.ref/sky130_fd_sc_hd/verilog/sky130_fd_sc_hd.v"]
+gf180 = ["/foss/pdks/gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu9t5v0/verilog/primitives.v", "/foss/pdks/gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu9t5v0/verilog/gf180mcu_fd_sc_mcu9t5v0.v"]
+ihp130 = ["/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/verilog/sg13g2_udp.v", "/foss/pdks/ihp-sg13g2/libs.ref/sg13g2_stdcell/verilog/sg13g2_stdcell.v"]
+
+[celulas_verilog_defines]
+skywater130 = ["FUNCTIONAL", "UNIT_DELAY=#1"]
+gf180 = ["FUNCTIONAL"]
+ihp130 = []
+
+# Complementos que a imagem não traz, baixados uma vez e conferidos pelo hash do registro.
+# elkjs: o ELK (Eclipse Layout Kernel) que monta o esquemático; roda no Node da imagem.
+[complementos.elkjs]
+versao = "0.11.0"
+url = "https://registry.npmjs.org/elkjs/-/elkjs-0.11.0.tgz"
+integridade = "sha512-u4J8h9mwEDaYMqo0RYJpqNMFDoMK7f+pu4GjcV+N8jIC7TRdORgzkfSjTJemhqONFfH6fBI3wpysgWbhgVWIXw=="
+arquivo = "package/lib/elk.bundled.js"
+licenca = "EPL-2.0"
+
 [visualizador]
 klayout = "/foss/tools/klayout/klayout"
 

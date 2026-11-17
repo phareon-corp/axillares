@@ -32,6 +32,7 @@ app.command("arquivo")(projeto.arquivo)
 app.command("sim")(projeto.sim)
 app.command("teste")(projeto.teste)
 app.command("onda")(projeto.onda)
+app.command("esquema")(projeto.esquema)
 
 
 @app.callback()

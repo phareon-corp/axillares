@@ -685,3 +685,197 @@ def _mostrar_atividade(caminho: Path) -> None:
     console.print(tabela)
     console.print("[dim]α por ciclo: trocas ÷ ciclos do relógio. Pesa no consumo dinâmico "
                   "(P ≈ α·C·V²·f); o relógio tem α = 2.[/]")  # fmt: skip
+
+
+def esquema(
+    nivel: str = typer.Option(
+        "rtl", "--nivel", "-n", help="rtl · portas · celulas · transistores."
+    ),
+    modulo: str | None = typer.Option(None, "--modulo", "-m", help="Módulo (padrão: o topo)."),
+    celula: str | None = typer.Option(
+        None, "--celula", help="No nível transistores: a célula (ex.: sky130_fd_sc_hd__nand2_1)."
+    ),
+    exportar: Path | None = typer.Option(
+        None, "--exportar", "-o", help="Salva o desenho em .png, .svg ou .pdf."
+    ),
+    prancha: str | None = typer.Option(
+        None, "--prancha", help="PDF como prancha técnica com carimbo: A4, A3, A2 ou A1."
+    ),
+    caderno: bool = typer.Option(
+        False, "--caderno", help="Com --prancha: um PDF com todos os módulos e células."
+    ),
+    estilo: str = typer.Option("impressao", "--estilo", help="impressao (P&B) ou tema."),
+    escala: int = typer.Option(2, "--escala", help="PNG: 1, 2 ou 4×."),
+    autor: str = typer.Option("", "--autor", help="Autor, no carimbo da prancha."),
+    simular: bool = typer.Option(
+        False, "--simular", help="Simula e mostra as saídas a cada ciclo (Icarus)."
+    ),
+    ciclos: int = typer.Option(16, "--ciclos", help="Ciclos de relógio simulados."),
+    periodo: float = typer.Option(10.0, "--periodo", help="Período do relógio, em ns."),
+    relogio: str | None = typer.Option(
+        None, "--relogio", help="Entrada do relógio (padrão: achada pelo nome)."
+    ),
+    entrada: list[str] = typer.Option(
+        [],
+        "--entrada",
+        "-e",
+        help="Valores de uma entrada: nome=valor ou nome=valor@ciclo,valor@ciclo (ex.: "
+        "rst_n=0@0,1@2). Repita para várias.",
+    ),
+    pasta: Path | None = OpcaoProjeto,
+) -> None:
+    """Mostra o circuito em notação técnica: que componentes o Verilog forma no chip."""
+    from axillares.core.esquema import Nivel
+    from axillares.motor.esquema import GeradorEsquema
+
+    try:
+        escolhido = Nivel(nivel)
+    except ValueError as erro:
+        raise _erro("Nível desconhecido: use rtl, portas, celulas ou transistores.") from erro
+    projeto = _projeto(pasta)
+    with console.status("Gerando o esquemático…") as status:
+        try:
+            circ = GeradorEsquema().gerar(
+                projeto, escolhido, ao_progresso=lambda s: status.update(f"{s}…")
+            )
+        except ErroMotor as erro:
+            raise _erro(str(erro)) from erro
+    nome = modulo or circ.topo
+    if nome not in circ.modulos:
+        raise _erro(f"Módulo “{nome}” não existe. Módulos: {', '.join(circ.modulos)}.")
+    console.print(f"[bold]{nome}[/] [dim]· {escolhido.titulo} · {circ.origem}[/]")
+
+    alvo = circ.modulos[nome]
+    if escolhido is Nivel.TRANSISTORES:
+        tipos = (
+            [celula]
+            if celula
+            else sorted(circ.esquemas_celulas, key=lambda x: (x in alvo.fisicas, x))
+        )
+        faltam = [x for x in tipos if x not in circ.celulas]
+        if faltam:
+            raise _erro(f"A netlist não usa a célula {faltam[0]}.")
+        for tipo in tipos:
+            cel = circ.celulas[tipo]
+            console.print(f"\n[bold]{tipo}[/] [dim]· {len(cel.transistores)} transistores "
+                          f"({cel.n_pmos} pMOS, {cel.n_nmos} nMOS)[/]")  # fmt: skip
+            tabela = Table(box=None, padding=(0, 2), header_style="dim")
+            for coluna in ("tipo", "porta", "dreno", "fonte", "W/L (µm)"):
+                tabela.add_column(coluna)
+            for tr in cel.transistores:
+                tabela.add_row("pMOS" if tr.canal_p else "nMOS", tr.porta, tr.dreno, tr.fonte,
+                               f"{tr.w_um:g}/{tr.l_um:g}")  # fmt: skip
+            console.print(tabela)
+        if celula:
+            alvo = circ.esquemas_celulas[celula]
+    else:
+        tabela = Table(box=None, padding=(0, 2), header_style="dim")
+        for coluna, justificar in (("qtd", "right"), ("componente", "left"),
+                                   ("transistores", "right"), ("o que é", "left")):  # fmt: skip
+            tabela.add_column(coluna, justify=justificar, no_wrap=coluna != "o que é",
+                              max_width=56 if coluna == "o que é" else None)  # fmt: skip
+        for item in circ.inventario(nome):
+            tabela.add_row(
+                str(item.quantidade),
+                item.tipo,
+                str(item.transistores) if item.transistores is not None else "",
+                item.explicacao.split(". ")[0].split(": ")[0],
+            )
+        console.print(tabela)
+        partes = [f"{len(alvo.componentes())} componentes"]
+        if bits := circ.bits_de_registro(nome):
+            partes.append(f"{bits} bits de registro")
+        if t := circ.transistores(nome):
+            partes.append(f"{t[0] + t[1]} transistores ({t[0]} pMOS, {t[1]} nMOS)")
+            if fisicos := circ.transistores_fisicos(nome):
+                partes.append(f"{fisicos} deles em células físicas (decap)")
+        console.print(f"[dim]{' · '.join(partes)}[/]")
+    linha = estimulo = None
+    if simular:
+        from axillares.core.simulacao_esquema import formatar, sugerir_estimulo
+
+        topo = circ.modulos[circ.topo]
+        estimulo = sugerir_estimulo(topo, ciclos, periodo)
+        if relogio is not None:
+            estimulo.relogio = relogio or None
+        for texto in entrada:
+            nome, _, valores = texto.partition("=")
+            if not valores:
+                raise _erro(f"Use nome=valor em --entrada (recebi “{texto}”).")
+            estimulo.entradas[nome.strip()] = {}
+            for parte in valores.split(","):
+                valor, _, ciclo = parte.partition("@")
+                try:
+                    estimulo.entradas[nome.strip()][int(ciclo or 0)] = int(valor, 0)
+                except ValueError as erro:
+                    raise _erro(f"Valor inválido em --entrada: “{parte}”.") from erro
+        with console.status("Simulando…") as status:
+            try:
+                linha = GeradorEsquema().simular(
+                    projeto, circ, estimulo, ao_progresso=lambda s: status.update(f"{s}…")
+                )
+            except ErroMotor as erro:
+                raise _erro(str(erro)) from erro
+        portas = [p for p in topo.portas if p.alimentacao is None]
+        tabela = Table(box=None, padding=(0, 2), header_style="dim")
+        tabela.add_column("ciclo", justify="right")
+        for p in portas:
+            tabela.add_column(p.nome + (" ⟲" if p.nome == estimulo.relogio else ""),
+                              justify="right")  # fmt: skip
+        bits = {p.nome: next((b.pinos[0].bits for b in topo.blocos
+                              if b.simbolo in {"entrada", "saida", "bidir"}
+                              and b.instancia == p.nome and b.largura_bits == p.largura), None)
+                for p in portas}  # fmt: skip
+        for k in range(estimulo.ciclos):
+            t_ns = (k + 1) * estimulo.periodo_ns - estimulo.periodo_ns * 0.05
+            linha_tabela = [str(k + 1)]
+            for p in portas:
+                b = bits[p.nome]
+                if b is None:  # barramento repartido por bit (portas, células)
+                    b = [x for blk in topo.blocos if blk.instancia == p.nome
+                         for x in blk.pinos[0].bits][: p.largura]  # fmt: skip
+                linha_tabela.append(formatar(linha.valor(b, t_ns)) if b else "?")
+            tabela.add_row(*linha_tabela)
+        console.print(tabela)
+        console.print("[dim]Valores no fim de cada ciclo (depois da borda de subida).[/]")
+    if exportar is not None:
+        if not alvo.posicionado:
+            raise _erro("Este circuito é grande demais para desenhar; o inventário está acima.")
+        import os
+
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+
+        _app = QApplication.instance() or QApplication([])
+        from axillares.gui.exportar_esquema import (
+            Carimbo,
+            OpcoesExportacao,
+            Pagina,
+            exportar_caderno,
+        )
+        from axillares.gui.exportar_esquema import exportar as exportar_desenho
+        from axillares.gui.visor_esquema import EstadoSimulacao
+
+        estado = None
+        if linha is not None and estimulo is not None:
+            estado = EstadoSimulacao(linha, estimulo.fim_ns - estimulo.periodo_ns * 0.25)
+        opcoes = OpcoesExportacao(
+            estilo=estilo, escala_png=escala, prancha=prancha,
+            carimbo=Carimbo(titulo=alvo.nome, projeto=projeto.nome, nivel=escolhido.titulo,
+                            descricao=projeto.projeto.descricao, autor=autor,
+                            pdk=circ.pdk or projeto.asic.pdk.value),
+        )  # fmt: skip
+        if caderno:
+            if not prancha:
+                opcoes.prancha = "A3"
+            paginas = [Pagina(e, escolhido.titulo, estado if n == circ.topo else None, titulo=n)
+                       for n, e in circ.modulos.items() if e.posicionado]  # fmt: skip
+            celulas = sorted(circ.esquemas_celulas.items())
+            paginas += [Pagina(e, "Transistores", titulo=tp) for tp, e in celulas if e.posicionado]
+            exportar_caderno(paginas, exportar.with_suffix(".pdf"), opcoes)
+        else:
+            try:
+                exportar_desenho(alvo, exportar, opcoes, estado)
+            except ValueError as erro:
+                raise _erro(str(erro)) from erro
+        console.print(f"[bold green]✓[/] Desenho salvo em {exportar}.")
