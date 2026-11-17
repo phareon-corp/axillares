@@ -13,9 +13,8 @@ ATALHO="$DADOS/applications/axillares.desktop"
 ICONE="$DADOS/icons/hicolor/scalable/apps/axillares.svg"
 
 if [[ "${1:-}" == "--remover" ]]; then
+    command -v axil >/dev/null && axil atalho --remover >/dev/null || rm -f "$ATALHO" "$ICONE"
     uv tool uninstall axillares || true
-    rm -f "$ATALHO" "$ICONE"
-    update-desktop-database "$DADOS/applications" 2>/dev/null || true
     echo "Axillares removido."
     exit 0
 fi
@@ -31,24 +30,7 @@ MODO=()
 uv tool install --force --python 3.12 "${MODO[@]}" "$RAIZ[gui]"
 BIN="$(uv tool dir --bin)/axil"
 
-install -Dm644 "$RAIZ/src/axillares/gui/icones/axillares.svg" "$ICONE"
-install -d "$(dirname "$ATALHO")"
-cat > "$ATALHO" <<DESKTOP
-[Desktop Entry]
-Type=Application
-Name=Axillares
-GenericName=Projeto de circuitos integrados
-Comment=Do Verilog ao GDSII com ferramentas abertas
-Exec=$BIN gui
-Icon=axillares
-Terminal=false
-Categories=Development;Electronics;Engineering;
-Keywords=EDA;Verilog;ASIC;FPGA;GDSII;chip;
-StartupWMClass=axillares
-StartupNotify=true
-DESKTOP
-update-desktop-database "$DADOS/applications" 2>/dev/null || true
-gtk-update-icon-cache -q "$DADOS/icons/hicolor" 2>/dev/null || true
+"$BIN" atalho >/dev/null
 
 echo "✓ Axillares instalado."
 echo "  comando: $BIN"

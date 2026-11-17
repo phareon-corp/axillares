@@ -45,8 +45,14 @@ Surfer ou GTKWave.
 uv tool install --python 3.12 "axillares[gui] @ git+https://github.com/phareon-corp/axillares"
 ```
 
-O comando `axil` fica em `~/.local/bin` (garanta que essa pasta está no `PATH`; `uv tool
-update-shell` faz isso).
+Depois, para o Axillares aparecer no **menu de aplicativos** com ícone:
+
+```bash
+axil atalho
+```
+
+O comando `axil` fica em `~/.local/bin`. Se o terminal disser "comando não encontrado", rode
+`uv tool update-shell` e abra um terminal novo.
 
 ### Opção 2 — clonando o repositório (com atalho no menu de aplicativos)
 
@@ -56,8 +62,8 @@ cd axillares
 scripts/instalar.sh
 ```
 
-O instalador coloca o comando `axil` em `~/.local/bin` e cria o atalho **Axillares** no menu, com
-ícone.
+O instalador coloca o comando `axil` em `~/.local/bin` e já cria o atalho **Axillares** no menu,
+com ícone.
 
 ### Preparar as ferramentas (uma vez)
 
@@ -102,13 +108,23 @@ axil executar fpga --placa icebreaker     # síntese, P&R e bitstream para FPGA
 
 `axil --help` e `axil <comando> --help` mostram todas as opções.
 
+## Não aparece no menu ou não abre
+
+1. **Não aparece no menu:** rode `axil atalho`. Se ainda não aparecer, saia da sessão e entre de
+   novo (alguns ambientes só releem o menu no login).
+2. **`axil: comando não encontrado`:** rode `uv tool update-shell` e abra um terminal novo (ou use
+   `~/.local/bin/axil`).
+3. **O ícone não abre nada:** rode `axil gui` num terminal para ver a mensagem. No Ubuntu/Debian,
+   o mais comum é faltar biblioteca do Qt — `sudo apt install libxcb-cursor0 libegl1`; o próprio
+   `axil gui` avisa quando ela falta.
+
 ## Atualizar e desinstalar
 
 ```bash
 uv tool upgrade axillares        # instalado pela opção 1
 git pull && scripts/instalar.sh  # instalado pela opção 2
 
-uv tool uninstall axillares      # opção 1
+axil atalho --remover && uv tool uninstall axillares   # opção 1
 scripts/instalar.sh --remover    # opção 2 (também remove o atalho)
 podman rmi docker.io/hpretl/iic-osic-tools   # libera o espaço da imagem de ferramentas
 ```

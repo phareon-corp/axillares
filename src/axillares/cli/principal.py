@@ -59,7 +59,54 @@ def gui() -> None:
         console.print("  → Instale com: [bold]pip install 'axillares[gui]'[/]")
         console.print(f"  [dim]{erro}[/dim]")
         raise typer.Exit(1) from erro
+    falta = bibliotecas_do_sistema_faltando()
+    if falta:
+        console.print(
+            f"[bold yellow]![/] A interface (Qt 6) pode não abrir: falta {', '.join(falta)} "
+            "no sistema.\n  → Ubuntu/Debian: [bold]sudo apt install libxcb-cursor0 libegl1[/] · "
+            "Fedora: [bold]sudo dnf install xcb-util-cursor mesa-libEGL[/]"
+        )
     raise typer.Exit(principal())
+
+
+def bibliotecas_do_sistema_faltando() -> list[str]:
+    """Bibliotecas que o Qt 6 do PySide6 pede ao sistema e que costumam faltar (Ubuntu/Debian).
+
+    Sem a libxcb-cursor, o Qt aborta no X11 com "could not load the Qt platform plugin xcb" e a
+    janela simplesmente não aparece — inclusive ao clicar no ícone do menu.
+    """
+    import ctypes.util
+    import os
+
+    falta = []
+    em_x11 = os.environ.get("XDG_SESSION_TYPE", "x11") != "wayland" or os.environ.get(
+        "QT_QPA_PLATFORM", ""
+    ).startswith("xcb")
+    fora_da_tela = os.environ.get("QT_QPA_PLATFORM") == "offscreen"
+    if em_x11 and not fora_da_tela and ctypes.util.find_library("xcb-cursor") is None:
+        falta.append("libxcb-cursor")
+    if ctypes.util.find_library("EGL") is None:
+        falta.append("libEGL")
+    return falta
+
+
+@app.command("atalho")
+def atalho(
+    remover: bool = typer.Option(False, "--remover", help="Tira o atalho do menu."),
+) -> None:
+    """Põe o Axillares no menu de aplicativos, com ícone (ou tira, com --remover)."""
+    from axillares.ambiente import atalho as at
+
+    if remover:
+        removidos = at.remover()
+        console.print("[bold green]✓[/] Atalho removido." if removidos
+                      else "Não havia atalho do Axillares no menu.")  # fmt: skip
+        return
+    feito = at.criar()
+    console.print("[bold green]✓[/] Axillares no menu de aplicativos.")
+    console.print(f"  [dim]atalho: {feito.desktop}[/dim]")
+    console.print(f"  [dim]abre:   {feito.executavel} gui[/dim]")
+    console.print("  Se não aparecer na hora, saia da sessão e entre de novo.")
 
 
 if __name__ == "__main__":  # pragma: no cover
