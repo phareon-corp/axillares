@@ -10,7 +10,7 @@ readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-authors = [{ name = "Projeto Axillares" }]
+authors = [{ name = "Phareon" }]
 keywords = ["eda", "asic", "fpga", "verilog", "gdsii", "siliconcompiler"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
@@ -46,20 +46,12 @@ packages = ["src/axillares"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["src", "tests"]
+src = ["src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 # RUF001-003: caracteres ambíguos — o código é em português e usa "–", "·" e aspas tipográficas de propósito.
 ignore = ["RUF001", "RUF002", "RUF003"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-m 'not ferramentas' --strict-markers"
-markers = [
-    "ferramentas: exige ferramentas de EDA reais instaladas (desligado por padrão; rode com -m ferramentas)",
-    "gui: exige PySide6 instalado",
-]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["typer.Argument", "typer.Option"]
