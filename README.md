@@ -22,39 +22,15 @@ Tudo existe também como comando de terminal (`axil`).
 
 | | |
 |---|---|
-| Sistema | Linux x86-64 (testado no Fedora 44; outras distribuições com Python 3.12 funcionam) |
-| Python | 3.12 ou mais novo — o `uv` baixa sozinho se não houver |
-| Instalador | [`uv`](https://docs.astral.sh/uv/): `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| Contêiner | **Podman** (recomendado) ou Docker |
+| Sistema | Linux x86-64 — Fedora, Ubuntu/Debian, Arch ou openSUSE |
+| Permissão | `sudo`, só se faltar pacote do sistema |
 | Disco | ~20 GB livres: a imagem de ferramentas baixa ~4 GB e ocupa ~15 GB |
-| Rede | só na primeira vez (imagem de ferramentas e um componente de desenho de 1,6 MB) |
+| Rede | só na instalação |
 
-Instalar o Podman: Fedora `sudo dnf install podman` · Ubuntu/Debian `sudo apt install podman` ·
-Arch `sudo pacman -S podman`. Com Docker, seu usuário precisa estar no grupo `docker`.
-
-No Ubuntu/Debian, a interface gráfica (Qt 6) pede também: `sudo apt install libxcb-cursor0 libegl1`.
-
-Opcionais, para abrir arquivos fora do app: KLayout (`flatpak install flathub de.klayout.KLayout`),
-Surfer ou GTKWave.
+Todo o resto — Podman, as bibliotecas do Qt 6, o `uv`, o Python 3.12, as ferramentas de EDA — o
+instalador põe sozinho.
 
 ## Instalação
-
-### Opção 1 — direto do GitHub
-
-```bash
-uv tool install --python 3.12 "axillares[gui] @ git+https://github.com/phareon-corp/axillares"
-```
-
-Depois, para o Axillares aparecer no **menu de aplicativos** com ícone:
-
-```bash
-axil atalho
-```
-
-O comando `axil` fica em `~/.local/bin`. Se o terminal disser "comando não encontrado", rode
-`uv tool update-shell` e abra um terminal novo.
-
-### Opção 2 — clonando o repositório (com atalho no menu de aplicativos)
 
 ```bash
 git clone https://github.com/phareon-corp/axillares.git
@@ -62,17 +38,39 @@ cd axillares
 scripts/instalar.sh
 ```
 
-O instalador coloca o comando `axil` em `~/.local/bin` e já cria o atalho **Axillares** no menu,
-com ícone.
+Um comando, cinco etapas; rodar de novo é seguro, o que já está pronto é pulado:
 
-### Preparar as ferramentas (uma vez)
+1. **pacotes do sistema** que faltarem — Podman (com `uidmap`, para rodar sem root), `curl` e as
+   bibliotecas que o Qt 6 carrega para abrir a janela — pelo gerenciador da distribuição (dnf, apt,
+   pacman ou zypper). Só esta etapa pede a senha, e só se faltar algo;
+2. o **`uv`**, se não houver (instalador oficial, em `~/.local/bin`);
+3. o comando **`axil`** em `~/.local/bin`, com Python 3.12 e a interface gráfica;
+4. o atalho **Axillares** no menu de aplicativos, com ícone;
+5. as **ferramentas de EDA** — a imagem de contêiner fixada por digest (~4 GB, uma vez só) e o
+   elkjs — e a conferência de cada ferramenta (`axil ambiente verificar`).
+
+| Opção | O que faz |
+|---|---|
+| `--sem-ambiente` | não baixa a imagem agora; dá para baixar depois pela tela **Abertura** ou com `axil ambiente instalar` |
+| `--sem-sistema` | não mexe nos pacotes do sistema (sem sudo) |
+| `--editavel` | instala apontando para a pasta clonada (para desenvolver) |
+| `--remover` | desinstala e tira o atalho |
+
+Se o terminal disser "comando não encontrado" para `axil`, rode `uv tool update-shell` e abra um
+terminal novo — o atalho do menu funciona de qualquer jeito.
+
+### Sem clonar (avançado)
+
+Quem já tem o `uv`, o Podman e as bibliotecas do Qt pode instalar só o programa:
 
 ```bash
-axil ambiente instalar     # baixa a imagem de ferramentas, fixada por versão (~4 GB)
-axil ambiente verificar    # confere cada ferramenta; diz o que fazer se faltar algo
+uv tool install --python 3.12 "axillares[gui] @ git+https://github.com/phareon-corp/axillares"
+axil atalho                 # entrada no menu de aplicativos
+axil ambiente instalar      # ferramentas de EDA (~4 GB) e elkjs
 ```
 
-Pela interface, a tela **Abertura** mostra a situação do ambiente e instala com um clique.
+Opcionais, para abrir arquivos fora do app: KLayout (`flatpak install flathub de.klayout.KLayout`),
+Surfer ou GTKWave.
 
 ## Primeiros passos
 
@@ -114,18 +112,17 @@ axil executar fpga --placa icebreaker     # síntese, P&R e bitstream para FPGA
    novo (alguns ambientes só releem o menu no login).
 2. **`axil: comando não encontrado`:** rode `uv tool update-shell` e abra um terminal novo (ou use
    `~/.local/bin/axil`).
-3. **O ícone não abre nada:** rode `axil gui` num terminal para ver a mensagem. No Ubuntu/Debian,
-   o mais comum é faltar biblioteca do Qt — `sudo apt install libxcb-cursor0 libegl1`; o próprio
+3. **O ícone não abre nada:** rode `axil gui` num terminal para ver a mensagem. O mais comum é
+   faltar biblioteca do Qt — rode `scripts/instalar.sh` de novo, que instala o que faltar; o próprio
    `axil gui` avisa quando ela falta.
 
 ## Atualizar e desinstalar
 
 ```bash
-uv tool upgrade axillares        # instalado pela opção 1
-git pull && scripts/instalar.sh  # instalado pela opção 2
+git pull && scripts/instalar.sh  # atualizar (clonado)
+uv tool upgrade axillares        # atualizar (instalado sem clonar)
 
-axil atalho --remover && uv tool uninstall axillares   # opção 1
-scripts/instalar.sh --remover    # opção 2 (também remove o atalho)
+scripts/instalar.sh --remover    # desinstalar (também remove o atalho)
 podman rmi docker.io/hpretl/iic-osic-tools   # libera o espaço da imagem de ferramentas
 ```
 

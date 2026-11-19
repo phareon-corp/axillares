@@ -135,6 +135,23 @@ def verificar(perfil: str = OpcaoPerfil) -> None:
         raise typer.Exit(1)
 
 
+def _baixar_complementos(p: Perfil) -> None:
+    """Os arquivos de terceiros que a imagem não traz (elkjs), já agora.
+
+    Sem isto, o elkjs só seria baixado no primeiro esquemático — e quem instalou
+    para usar sem rede descobriria a falta ali.
+    """
+    from axillares.ambiente import complementos as comp
+
+    for nome, c in p.complementos.items():
+        try:
+            comp.garantir(nome, c, lambda m: console.print(f"[{ACENTO}]●[/] {m}"))
+        except comp.ErroComplemento as erro:
+            console.print(f"[red]✕[/] {erro}")
+            raise typer.Exit(1) from erro
+        console.print(f"[green]✓[/] {nome} {c.versao} pronto.")
+
+
 @app.command("instalar")
 def instalar(perfil: str = OpcaoPerfil) -> None:
     """Baixa a imagem de ferramentas fixada por digest (podman ou docker) e confere o digest."""
@@ -154,6 +171,7 @@ def instalar(perfil: str = OpcaoPerfil) -> None:
     ):
         console.print("[green]✓[/] A imagem já está baixada e confere com o digest do perfil.")
         console.print(f"  [dim]{p.imagem.referencia}[/]")
+        _baixar_complementos(p)
         return
     if consulta.presenca is ct.PresencaImagem.ERRO and consulta.diagnostico:
         console.print(painel_diagnostico(consulta.diagnostico))
@@ -187,3 +205,4 @@ def instalar(perfil: str = OpcaoPerfil) -> None:
         "[green]✓[/] Imagem baixada e digest verificado. "
         "Rode “axil ambiente verificar” para conferir cada ferramenta."
     )
+    _baixar_complementos(p)
